@@ -1,0 +1,76 @@
+/* remy — design tokens. Source of truth is the Design System artifact (see brand/README.md). */
+:root, [data-theme="light"] {
+  --surface: #f6efe3;
+  --surface-raised: #fffaf1;
+  --surface-sunken: #ebe1cf;
+  --ink: #2a2130;
+  --ink-muted: #655a63;
+  --slate: #5e6b82;
+  --hairline: #dccfb9;
+  --copper: #9e4e1c;
+  --on-copper: #fff6ea;
+  --aubergine: #512546;
+  --lamp: #d9922a;
+  --tomato: #b5332a;
+  --zucchini: #44702f;
+  --seine: #2d5a86;
+  --shadow-lamp: 0 8px 24px rgba(158, 78, 28, 0.18);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface: #191a2c;
+    --surface-raised: #232539;
+    --surface-sunken: #111222;
+    --ink: #f3eadb;
+    --ink-muted: #b2aab6;
+    --slate: #9aa6bd;
+    --hairline: #353753;
+    --copper: #e0915a;
+    --on-copper: #1f1409;
+    --aubergine: #c995bd;
+    --lamp: #f0b55a;
+    --tomato: #ef7a6c;
+    --zucchini: #97c87a;
+    --seine: #8fbbe6;
+    --shadow-lamp: 0 8px 28px rgba(240, 181, 90, 0.16);
+    color-scheme: dark;
+  }
+}
+[data-theme="dark"] {
+  --surface: #191a2c;
+  --surface-raised: #232539;
+  --surface-sunken: #111222;
+  --ink: #f3eadb;
+  --ink-muted: #b2aab6;
+  --slate: #9aa6bd;
+  --hairline: #353753;
+  --copper: #e0915a;
+  --on-copper: #1f1409;
+  --aubergine: #c995bd;
+  --lamp: #f0b55a;
+  --tomato: #ef7a6c;
+  --zucchini: #97c87a;
+  --seine: #8fbbe6;
+  --shadow-lamp: 0 8px 28px rgba(240, 181, 90, 0.16);
+  color-scheme: dark;
+}
+:root {
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-6: 24px; --space-8: 32px; --space-12: 48px;
+  --radius-sm: 4px; --radius-md: 10px; --radius-lg: 18px; --radius-pill: 999px;
+  --font-display: "Yeseva One", "Abril Fatface", Georgia, serif;
+  --font-body: "Alegreya Sans", "Gill Sans", "Segoe UI", system-ui, sans-serif;
+  --font-ticket: "Courier Prime", "Courier New", Courier, monospace;
+}
+/* Google Fonts:
+   https://fonts.googleapis.com/css2?family=Yeseva+One&family=Alegreya+Sans:wght@400;500;700&family=Courier+Prime&display=swap */
+.display-xl { font: 400 64px/1 var(--font-display); letter-spacing: -0.01em; }
+.display-lg { font: 400 40px/1.05 var(--font-display); }
+.display-md { font: 400 26px/1.15 var(--font-display); }
+.title       { font: 700 20px/26px var(--font-body); }
+.body        { font: 400 17px/26px var(--font-body); }
+.body-strong { font: 700 17px/26px var(--font-body); }
+.caption     { font: 500 14px/20px var(--font-body); }
+.label       { font: 700 12px/16px var(--font-body); letter-spacing: 0.08em; text-transform: uppercase; }
+.ticket      { font: 400 14px/20px var(--font-ticket); font-variant-numeric: tabular-nums; }
