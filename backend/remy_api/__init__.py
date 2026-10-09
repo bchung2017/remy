@@ -17,9 +17,10 @@ from .config import resolve_config
 
 db = SQLAlchemy()
 
-# repo root (…/remy), where a frontend build would land in dist/ if one is added
+# repo root (…/remy); the static frontend lives in web/, brand tokens in brand/
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-DIST_DIR = os.path.join(REPO_ROOT, "dist")
+WEB_DIR = os.path.join(REPO_ROOT, "web")
+BRAND_DIR = os.path.join(REPO_ROOT, "brand")
 
 
 def create_app() -> Flask:
@@ -28,7 +29,7 @@ def create_app() -> Flask:
     app = Flask(
         __name__,
         instance_relative_config=True,
-        static_folder=DIST_DIR,
+        static_folder=WEB_DIR,
         static_url_path="",
     )
     os.makedirs(app.instance_path, exist_ok=True)
@@ -71,11 +72,14 @@ def create_app() -> Flask:
         from .seed import seed_if_empty
         seed_if_empty()
 
-    # Serve a built frontend from dist/ if one exists; otherwise a JSON banner.
+    # The frontend is plain HTML/JS/CSS in web/ (no build step); brand tokens
+    # come from brand/tokens.css so the two stay one file.
     @app.route("/")
     def index():
-        if os.path.exists(os.path.join(DIST_DIR, "index.html")):
-            return send_from_directory(DIST_DIR, "index.html")
-        return {"service": "remy-api", "status": "ok"}
+        return send_from_directory(WEB_DIR, "index.html")
+
+    @app.route("/tokens.css")
+    def tokens_css():
+        return send_from_directory(BRAND_DIR, "tokens.css")
 
     return app

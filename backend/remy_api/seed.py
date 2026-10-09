@@ -1,14 +1,26 @@
-"""Seed the database with starter rows. Runs once, only when the table is empty."""
+"""Seed the database with a starter recipe. Runs once, only when the table is empty."""
 from . import db
-from .models import Item
+from .models import Recipe
 
-ITEMS = [
-    dict(name="first item", note="replace me with real data", position=0),
+RECIPES = [
+    dict(
+        title="Ratatouille",
+        body=(
+            "1 eggplant, 2 zucchini, 2 yellow squash, 4 roma tomatoes, 1 red pepper, "
+            "1 onion, 3 cloves garlic, thyme, olive oil, salt.\n\n"
+            "Sweat the onion, pepper and garlic in oil until soft; add two chopped tomatoes "
+            "and cook down to a sauce. Spread in a shallow dish.\n\n"
+            "Slice everything else thin. Shingle the slices over the sauce in a tight spiral, "
+            "alternating colors. Oil, salt, thyme. Cover with parchment.\n\n"
+            "Bake at 275F for about 90 minutes, until the vegetables are tender but hold their shape."
+        ),
+        tags=Recipe.pack_tags(["vegetable", "bake"]),
+    ),
 ]
 
 
 def seed_if_empty() -> None:
-    if Item.query.first() is not None:
+    if Recipe.query.first() is not None:
         return
-    db.session.add_all(Item(**row) for row in ITEMS)
+    db.session.add_all(Recipe(**row) for row in RECIPES)
     db.session.commit()

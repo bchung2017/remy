@@ -36,8 +36,8 @@ def main() -> int:
         seed_if_empty()
         db.session.commit()
 
-        from remy_api.models import Item
-        print(f"remy: reseeded {Item.query.count()} items.")
+        from remy_api.models import Recipe
+        print(f"remy: reseeded {Recipe.query.count()} recipes.")
     return 0
 
 

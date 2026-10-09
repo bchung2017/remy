@@ -1,4 +1,4 @@
-"""Tests for the item routes, using a throwaway on-disk SQLite app."""
+"""Tests for the recipe routes, using a throwaway on-disk SQLite app."""
 import os
 import sys
 import tempfile
@@ -25,54 +25,72 @@ class Health(unittest.TestCase):
         self.assertEqual(r.get_json()["backend"], "sqlite")
         self.assertIsNone(r.get_json()["schema"])
 
+    def test_serves_frontend_and_tokens(self):
+        c = make_client()
+        self.assertIn(b"<title>remy</title>", c.get("/").data)
+        self.assertEqual(c.get("/app.js").status_code, 200)
+        self.assertIn(b"--copper", c.get("/tokens.css").data)
 
-class Items(unittest.TestCase):
+
+class Recipes(unittest.TestCase):
     def setUp(self):
         self.client = make_client()
 
     def test_seeded_on_first_boot(self):
-        rows = self.client.get("/api/items").get_json()
+        rows = self.client.get("/api/recipes").get_json()
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["name"], "first item")
+        self.assertEqual(rows[0]["title"], "Ratatouille")
+        self.assertEqual(rows[0]["tags"], ["vegetable", "bake"])
 
     def test_create_read_update_delete(self):
-        r = self.client.post("/api/items", json={"name": "ratatouille", "note": "the dish"})
+        r = self.client.post("/api/recipes", json={"title": "Omelette", "body": "3 eggs. Butter.", "tags": "Eggs, breakfast, eggs"})
         self.assertEqual(r.status_code, 201)
-        item = r.get_json()
-        self.assertEqual(item["name"], "ratatouille")
-        self.assertEqual(item["position"], 1)  # appended after the seed row
+        rec = r.get_json()
+        self.assertEqual(rec["tags"], ["eggs", "breakfast"])  # normalized, deduped
 
-        r = self.client.get(f"/api/items/{item['id']}")
+        r = self.client.get(f"/api/recipes/{rec['id']}")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.get_json()["note"], "the dish")
+        self.assertEqual(r.get_json()["body"], "3 eggs. Butter.")
 
-        r = self.client.put(f"/api/items/{item['id']}", json={"note": "revised", "position": 5})
+        r = self.client.put(f"/api/recipes/{rec['id']}", json={"body": "4 eggs.", "tags": ["brunch"]})
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.get_json()["note"], "revised")
-        self.assertEqual(r.get_json()["position"], 5)
+        self.assertEqual(r.get_json()["body"], "4 eggs.")
+        self.assertEqual(r.get_json()["tags"], ["brunch"])
+        self.assertEqual(r.get_json()["title"], "Omelette")  # partial update keeps title
 
-        self.assertEqual(self.client.delete(f"/api/items/{item['id']}").status_code, 204)
-        self.assertEqual(self.client.get(f"/api/items/{item['id']}").status_code, 404)
+        self.assertEqual(self.client.delete(f"/api/recipes/{rec['id']}").status_code, 204)
+        self.assertEqual(self.client.get(f"/api/recipes/{rec['id']}").status_code, 404)
 
-    def test_name_required(self):
-        self.assertEqual(self.client.post("/api/items", json={}).status_code, 400)
-        self.assertEqual(self.client.post("/api/items", json={"name": "  "}).status_code, 400)
+    def test_search_tag_and_sort(self):
+        self.client.post("/api/recipes", json={"title": "Bread", "body": "flour water salt yeast", "tags": ["bake"]})
+        self.client.post("/api/recipes", json={"title": "Aioli", "body": "garlic, oil, egg yolk"})
 
-    def test_bad_values_are_400(self):
-        self.assertEqual(self.client.put("/api/items/1", json={"name": ""}).status_code, 400)
-        self.assertEqual(self.client.put("/api/items/1", json={"position": "x"}).status_code, 400)
-        self.assertEqual(self.client.post("/api/items", json={"name": "a", "note": 3}).status_code, 400)
+        titles = [r["title"] for r in self.client.get("/api/recipes?q=garlic").get_json()]
+        self.assertEqual(sorted(titles), ["Aioli", "Ratatouille"])   # body match, case-insensitive
 
-    def test_unknown_keys_ignored(self):
-        r = self.client.put("/api/items/1", json={"bogus": 1, "id": 99, "note": "ok"})
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.get_json()["id"], 1)
-        self.assertEqual(r.get_json()["note"], "ok")
+        titles = [r["title"] for r in self.client.get("/api/recipes?tag=bake").get_json()]
+        self.assertEqual(sorted(titles), ["Bread", "Ratatouille"])
+
+        titles = [r["title"] for r in self.client.get("/api/recipes?sort=title").get_json()]
+        self.assertEqual(titles, ["Aioli", "Bread", "Ratatouille"])
+
+        titles = [r["title"] for r in self.client.get("/api/recipes?sort=created").get_json()]
+        self.assertEqual(titles[0], "Aioli")  # newest first
+
+        tags = self.client.get("/api/tags").get_json()
+        self.assertEqual(tags, [{"tag": "bake", "count": 2}, {"tag": "vegetable", "count": 1}])
+
+    def test_validation(self):
+        self.assertEqual(self.client.post("/api/recipes", json={}).status_code, 400)
+        self.assertEqual(self.client.post("/api/recipes", json={"title": "  "}).status_code, 400)
+        self.assertEqual(self.client.post("/api/recipes", json={"title": "x", "body": 3}).status_code, 400)
+        self.assertEqual(self.client.post("/api/recipes", json={"title": "x", "tags": 3}).status_code, 400)
+        self.assertEqual(self.client.put("/api/recipes/1", json={"title": ""}).status_code, 400)
 
     def test_missing_is_404(self):
-        self.assertEqual(self.client.get("/api/items/999").status_code, 404)
-        self.assertEqual(self.client.put("/api/items/999", json={"note": "x"}).status_code, 404)
-        self.assertEqual(self.client.delete("/api/items/999").status_code, 404)
+        self.assertEqual(self.client.get("/api/recipes/999").status_code, 404)
+        self.assertEqual(self.client.put("/api/recipes/999", json={"body": "x"}).status_code, 404)
+        self.assertEqual(self.client.delete("/api/recipes/999").status_code, 404)
 
 
 if __name__ == "__main__":

@@ -1,24 +1,37 @@
 """HTTP routes for the remy API, all under /api."""
 from flask import Blueprint, current_app, jsonify, request
+from sqlalchemy import or_
 
 from . import db
-from .models import Item
+from .models import Recipe
 
 api = Blueprint("api", __name__, url_prefix="/api")
 
-# Mutable item fields: incoming camelCase JSON key -> model attribute.
-ITEM_FIELDS = {"name": "name", "note": "note", "position": "position"}
+SORTS = {
+    "updated": (Recipe.updated_at.desc(), Recipe.id.desc()),
+    "created": (Recipe.created_at.desc(), Recipe.id.desc()),
+    "title": (db.func.lower(Recipe.title), Recipe.id),
+}
 
 
-def _field_error(key: str, value) -> str | None:
-    """Validate a single item field value; return an error message or None."""
-    if key == "name" and not (isinstance(value, str) and value.strip()):
-        return "name must be a non-empty string"
-    if key == "note" and value is not None and not isinstance(value, str):
-        return "note must be a string or null"
-    if key == "position" and (isinstance(value, bool) or not isinstance(value, int)):
-        return "position must be an integer"
-    return None
+def _validate(data: dict, partial: bool) -> tuple[dict, str | None]:
+    """Pull title/body/tags out of a JSON body; return (values, error)."""
+    values = {}
+    if "title" in data or not partial:
+        title = data.get("title")
+        if not isinstance(title, str) or not title.strip():
+            return {}, "title is required"
+        values["title"] = title.strip()[:200]
+    if "body" in data:
+        if data["body"] is not None and not isinstance(data["body"], str):
+            return {}, "body must be a string"
+        values["body"] = data["body"] or ""
+    if "tags" in data:
+        tags = data["tags"]
+        if tags is not None and not isinstance(tags, (list, str)):
+            return {}, "tags must be a list of strings"
+        values["tags"] = Recipe.pack_tags(tags)[:400]
+    return values, None
 
 
 @api.get("/health")
@@ -30,70 +43,68 @@ def health():
     }
 
 
-@api.get("/items")
-def list_items():
-    rows = Item.query.order_by(Item.position, Item.id).all()
-    return jsonify([i.to_dict() for i in rows])
+@api.get("/recipes")
+def list_recipes():
+    q = Recipe.query
+    search = (request.args.get("q") or "").strip()
+    if search:
+        like = f"%{search}%"
+        q = q.filter(or_(Recipe.title.ilike(like), Recipe.body.ilike(like), Recipe.tags.ilike(like)))
+    tag = (request.args.get("tag") or "").strip().lower()
+    if tag:
+        q = q.filter(Recipe.tags.like(f"%,{tag},%"))
+    q = q.order_by(*SORTS.get(request.args.get("sort", "updated"), SORTS["updated"]))
+    return jsonify([r.to_dict() for r in q.all()])
 
 
-@api.get("/items/<int:item_id>")
-def get_item(item_id: int):
-    item = db.session.get(Item, item_id)
-    if item is None:
+@api.get("/tags")
+def list_tags():
+    counts: dict[str, int] = {}
+    for (tags,) in db.session.query(Recipe.tags).filter(Recipe.tags != "").all():
+        for t in tags.split(","):
+            if t:
+                counts[t] = counts.get(t, 0) + 1
+    return jsonify([{"tag": t, "count": n} for t, n in sorted(counts.items())])
+
+
+@api.get("/recipes/<int:recipe_id>")
+def get_recipe(recipe_id: int):
+    recipe = db.session.get(Recipe, recipe_id)
+    if recipe is None:
         return jsonify({"error": "not found"}), 404
-    return jsonify(item.to_dict())
+    return jsonify(recipe.to_dict())
 
 
-@api.post("/items")
-def create_item():
-    data = request.get_json(silent=True) or {}
-    name = (data.get("name") or "").strip() if isinstance(data.get("name"), str) else ""
-    if not name:
-        return jsonify({"error": "name is required"}), 400
-
-    values = {}
-    for key in ITEM_FIELDS:
-        if key == "name" or key not in data:
-            continue
-        err = _field_error(key, data[key])
-        if err:
-            return jsonify({"error": err}), 400
-        values[ITEM_FIELDS[key]] = data[key]
-
-    if "position" not in values:
-        max_pos = db.session.query(db.func.max(Item.position)).scalar()
-        values["position"] = (max_pos or 0) + 1
-
-    item = Item(name=name[:120], **values)
-    db.session.add(item)
+@api.post("/recipes")
+def create_recipe():
+    values, err = _validate(request.get_json(silent=True) or {}, partial=False)
+    if err:
+        return jsonify({"error": err}), 400
+    recipe = Recipe(**values)
+    db.session.add(recipe)
     db.session.commit()
-    return jsonify(item.to_dict()), 201
+    return jsonify(recipe.to_dict()), 201
 
 
-@api.put("/items/<int:item_id>")
-def update_item(item_id: int):
-    item = db.session.get(Item, item_id)
-    if item is None:
+@api.put("/recipes/<int:recipe_id>")
+def update_recipe(recipe_id: int):
+    recipe = db.session.get(Recipe, recipe_id)
+    if recipe is None:
         return jsonify({"error": "not found"}), 404
-
-    data = request.get_json(silent=True) or {}
-    for key, attr in ITEM_FIELDS.items():
-        if key not in data:
-            continue
-        err = _field_error(key, data[key])
-        if err:
-            return jsonify({"error": err}), 400
-        value = data[key].strip()[:120] if key == "name" else data[key]
-        setattr(item, attr, value)
+    values, err = _validate(request.get_json(silent=True) or {}, partial=True)
+    if err:
+        return jsonify({"error": err}), 400
+    for attr, value in values.items():
+        setattr(recipe, attr, value)
     db.session.commit()
-    return jsonify(item.to_dict())
+    return jsonify(recipe.to_dict())
 
 
-@api.delete("/items/<int:item_id>")
-def delete_item(item_id: int):
-    item = db.session.get(Item, item_id)
-    if item is None:
+@api.delete("/recipes/<int:recipe_id>")
+def delete_recipe(recipe_id: int):
+    recipe = db.session.get(Recipe, recipe_id)
+    if recipe is None:
         return jsonify({"error": "not found"}), 404
-    db.session.delete(item)
+    db.session.delete(recipe)
     db.session.commit()
     return "", 204

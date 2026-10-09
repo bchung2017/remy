@@ -7,6 +7,8 @@ COPY backend/requirements.txt ./backend/requirements.txt
 RUN pip install -r backend/requirements.txt
 
 COPY backend ./backend
+COPY web ./web
+COPY brand ./brand
 
 EXPOSE 5000
 # Render injects $PORT. One worker by default so first-boot seeding can't race;

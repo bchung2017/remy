@@ -1,12 +1,17 @@
 # remy
 
-A **Flask + SQLite** JSON API that swaps to **Postgres/Supabase** via
-`DATABASE_URL`, isolated in its own schema so it can share one database with
-other apps without colliding. Deploys to Render as a Docker web service.
+A small recipe book. Each recipe is a title, a freeform text body and optional
+tags; browse, search, filter by tag, sort, create, edit, delete.
+
+A **Flask + SQLite** JSON API plus a no-build static frontend, swapping to
+**Postgres/Supabase** via `DATABASE_URL`, isolated in its own schema so it can
+share one database with other apps without colliding. Deploys to Render as a
+Docker web service.
 
 ## Stack
 
-- **[Flask](https://flask.palletsprojects.com/)** — JSON API under `/api`
+- **[Flask](https://flask.palletsprojects.com/)** — JSON API under `/api`, serves `web/` and `brand/tokens.css`
+- **Vanilla HTML/CSS/JS** frontend in `web/` (hash-routed, no bundler), styled from `brand/tokens.css`
 - **[Flask-SQLAlchemy](https://flask-sqlalchemy.palletsprojects.com/)** over **SQLite** by default
 - **Postgres/Supabase** when `DATABASE_URL` is set, pinned to `DB_SCHEMA`
   (the `stackify-v1` no-collision schema pattern)
@@ -22,8 +27,8 @@ pip install -r requirements.txt
 python wsgi.py            # http://localhost:5000
 ```
 
-On first run it creates `backend/instance/remy.db` and seeds one placeholder
-item. `GET /api/health` reports the active backend + schema.
+On first run it creates `backend/instance/remy.db` and seeds one recipe. The
+UI is at `/`; `GET /api/health` reports the active backend + schema.
 
 To use a different database, copy `backend/.env.example` to `backend/.env` and
 set `DATABASE_URL`, or export it in the shell.
@@ -91,25 +96,32 @@ docker run -p 5000:5000 -e DATABASE_URL=... -e DB_SCHEMA=remy remy
 
 ## API
 
-Base path `/api`. Fields use camelCase keys.
+Base path `/api`. Fields use camelCase keys. A recipe is
+`{id, title, body, tags: [..], createdAt, updatedAt}`; `tags` is accepted as a
+list or a comma-separated string and normalized to lowercase, deduped.
 
-| Method   | Path          | Purpose                                  |
-| -------- | ------------- | ---------------------------------------- |
-| `GET`    | `/health`     | liveness + active backend/schema         |
-| `GET`    | `/items`      | list items                               |
-| `POST`   | `/items`      | create an item `{name, note?, position?}` |
-| `GET`    | `/items/:id`  | read one item                            |
-| `PUT`    | `/items/:id`  | update an item's fields                  |
-| `DELETE` | `/items/:id`  | delete an item                           |
-
-`Item` is a placeholder model to prove the stack end to end — replace it in
-`backend/remy_api/models.py` once the real domain is decided.
+| Method   | Path            | Purpose                                                          |
+| -------- | --------------- | ---------------------------------------------------------------- |
+| `GET`    | `/health`       | liveness + active backend/schema                                 |
+| `GET`    | `/recipes`      | list; `?q=` searches title/body/tags, `?tag=` filters, `?sort=updated\|created\|title` |
+| `POST`   | `/recipes`      | create `{title, body?, tags?}`                                   |
+| `GET`    | `/recipes/:id`  | read one                                                         |
+| `PUT`    | `/recipes/:id`  | partial update of `title`, `body`, `tags`                        |
+| `DELETE` | `/recipes/:id`  | delete                                                           |
+| `GET`    | `/tags`         | `[{tag, count}]` across all recipes                              |
 
 ## Layout
 
 ```
 Dockerfile              python:3.11-slim + gunicorn
 render.yaml             Render Blueprint (one Docker web service)
+brand/
+  tokens.css            design tokens (both themes), served at /tokens.css
+  README.md             palette summary + link to the design system
+web/
+  index.html            shell; loads Google Fonts, tokens.css, app.css, app.js
+  app.css               layout + components on top of the tokens
+  app.js                hash router: #/ browse, #/new, #/r/:id, #/r/:id/edit
 backend/
   wsgi.py               dev entry / WSGI app (wsgi:app)
   requirements.txt
@@ -118,12 +130,12 @@ backend/
   remy_api/
     __init__.py         create_app factory, db init, schema creation
     config.py           backend selection + no-collision schema isolation
-    models.py           Item (to_dict → camelCase JSON)
+    models.py           Recipe (to_dict → camelCase JSON)
     routes.py           /api blueprint
     seed.py             one-time seed when the table is empty
   scripts/
     migrate_sqlite_to_pg.py   one-shot SQLite → Postgres copier (guarded)
   tests/
     test_config.py      backend-selection + schema-isolation unit tests
-    test_routes.py      item CRUD tests on throwaway SQLite
+    test_routes.py      recipe CRUD/search tests on throwaway SQLite
 ```
