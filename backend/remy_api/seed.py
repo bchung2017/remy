@@ -1,11 +1,11 @@
 """Seed the database with a starter recipe. Runs once, only when the table is empty."""
 from . import db
-from .models import Recipe
+from .models import Recipe, new_id
 
 RECIPES = [
     dict(
         title="Ratatouille",
-        body=(
+        text=(
             "1 eggplant, 2 zucchini, 2 yellow squash, 4 roma tomatoes, 1 red pepper, "
             "1 onion, 3 cloves garlic, thyme, olive oil, salt.\n\n"
             "Sweat the onion, pepper and garlic in oil until soft; add two chopped tomatoes "
@@ -22,5 +22,8 @@ RECIPES = [
 def seed_if_empty() -> None:
     if Recipe.query.first() is not None:
         return
-    db.session.add_all(Recipe(**row) for row in RECIPES)
+    for row in RECIPES:
+        r = Recipe(title=row["title"], tags=row["tags"])
+        r.set_blocks([{"id": new_id(), "type": "text", "text": row["text"]}])
+        db.session.add(r)
     db.session.commit()

@@ -1,8 +1,10 @@
 # remy
 
-A small recipe book. Each recipe is a title, a freeform text body and optional
-tags; browse, search, filter by tag, sort, create, edit, delete. The API can
-also turn a raw spoken-style dump into a tidy draft with Claude.
+A small recipe book. Each recipe is a notebook page: a title, tags, and an
+ordered list of blocks you add in place. Three block types: **Text**, **Image**
+(photo upload, stored in the database), and **AI** (a voice file that is
+transcribed, formatted into ingredients and steps by Claude, and kept as a
+block with the original audio). Browse, search, filter by tag, sort, delete.
 
 A **Flask + SQLite** JSON API plus a no-build static frontend, swapping to
 **Postgres/Supabase** via `DATABASE_URL`, isolated in its own schema so it can
@@ -12,9 +14,9 @@ Docker web service.
 ## Stack
 
 - **[Flask](https://flask.palletsprojects.com/)** — JSON API under `/api`, serves `web/` and `brand/tokens.css`
-- **Vanilla HTML/CSS/JS** frontend in `web/` (hash-routed, no bundler), styled from `brand/tokens.css`
+- **Vanilla HTML/CSS/JS** frontend in `web/` (hash-routed, no bundler), styled from `brand/tokens.css`; pages autosave as you type
 - **Installable PWA**: `web/manifest.webmanifest` + `web/sw.js` (network-first shell cache, API never cached)
-- **Drafting endpoint** via the [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) and `claude-haiku-5-5`, on only when `ANTHROPIC_API_KEY` is set
+- **AI block**: speech-to-text through OpenAI's audio transcription API (`OPENAI_API_KEY`), then formatting through the [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) and `claude-haiku-5-5` (`ANTHROPIC_API_KEY`). Both keys unset ⇒ the AI button is hidden; text and image blocks still work
 - **[Flask-SQLAlchemy](https://flask-sqlalchemy.palletsprojects.com/)** over **SQLite** by default
 - **Postgres/Supabase** when `DATABASE_URL` is set, pinned to `DB_SCHEMA`
   (the `stackify-v1` no-collision schema pattern)
@@ -69,20 +71,41 @@ cd backend
 python reset_db.py --yes
 ```
 
-### Drafting with Claude
+### Blocks, images, and the AI block
 
-`POST /api/recipes/draft` takes `{transcript, title?}` (a dictated or typed
-dump) and asks `claude-haiku-5-5` for `{title, body, tags}` through structured
-output. Nothing is saved; the caller decides what to do with the draft. The
-body comes back as plain text: an Ingredients list, a blank line, numbered
-Steps. Set `ANTHROPIC_API_KEY` to enable it; unset, the endpoint returns 503
-and `/api/health` reports `draft: false`. Transcripts are capped at 8000
-characters and output at 2000 tokens, so one call costs well under a tenth of
-a cent.
+A recipe's `blocks` is an ordered JSON list. `body` is derived from the text of
+text and AI blocks, so search and list previews keep working.
 
-The app has no auth: anyone who can reach the URL can call `/draft` on your
-key. Fine for a personal deploy; add a secret header or a rate limit before
-sharing the link widely. The web UI does not call this endpoint yet.
+```
+{"id", "type": "text",  "text"}
+{"id", "type": "image", "asset", "caption"}
+{"id", "type": "ai",    "text", "transcript", "asset"}
+```
+
+- **Images** upload to `POST /api/recipes/:id/assets` (multipart `file`, image
+  only, 8 MB cap; the UI shrinks photos to 1600px JPEG first) and are served
+  from `GET /api/assets/:id`. Bytes live in the database, so they survive
+  Render's ephemeral disk. Assets no block references are pruned on save.
+- **AI** uploads a voice file to `POST /api/recipes/:id/voice`. Claude has no
+  audio input, so the server transcribes it first (OpenAI audio transcription,
+  `STT_MODEL` default `whisper-1`), then asks `claude-haiku-5-5` for
+  `{title, body, tags}` through structured output and appends an `ai` block
+  holding the formatted text, the raw transcript and the audio. An untitled
+  page takes the drafted title; empty tags take the drafted tags. Needs both
+  `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`; otherwise 503 and `/api/health`
+  reports `voice: false`. Transcripts are capped at 8000 characters and output
+  at 2000 tokens.
+- `POST /api/recipes/draft` (`{transcript, title?}` → `{title, body, tags}`)
+  is the text-only version of the same formatting step.
+
+The app has no auth: anyone who can reach the URL can spend your keys. Fine
+for a personal deploy; add a secret header or a rate limit before sharing the
+link widely.
+
+Schema note: `blocks` and the `assets` table were added after the first
+version. `create_all()` does not alter existing tables, so a database created
+before this change needs `python reset_db.py --yes` (or one boot with
+`REMY_DB_RESET=1`) to pick them up.
 
 Additional env vars: `DATABASE_SSL=disable` (local plaintext Postgres only),
 `PGPOOL_MAX` (max pool connections, default 3), `REMY_DB_RESET=1` (drop +
@@ -115,18 +138,22 @@ docker run -p 5000:5000 -e DATABASE_URL=... -e DB_SCHEMA=remy remy
 ## API
 
 Base path `/api`. Fields use camelCase keys. A recipe is
-`{id, title, body, tags: [..], createdAt, updatedAt}`; `tags` is accepted as a
-list or a comma-separated string and normalized to lowercase, deduped.
+`{id, title, blocks: [..], body, tags: [..], createdAt, updatedAt}`; `tags` is
+accepted as a list or a comma-separated string and normalized to lowercase,
+deduped. Writes take `blocks`; a legacy `body` string becomes one text block.
 
 | Method   | Path            | Purpose                                                          |
 | -------- | --------------- | ---------------------------------------------------------------- |
 | `GET`    | `/health`       | liveness + active backend/schema                                 |
 | `GET`    | `/recipes`      | list; `?q=` searches title/body/tags, `?tag=` filters, `?sort=updated\|created\|title` |
-| `POST`   | `/recipes`      | create `{title, body?, tags?}`                                   |
+| `POST`   | `/recipes`      | create `{title?, blocks?, tags?}` (empty body ⇒ an Untitled page) |
 | `GET`    | `/recipes/:id`  | read one                                                         |
-| `PUT`    | `/recipes/:id`  | partial update of `title`, `body`, `tags`                        |
+| `PUT`    | `/recipes/:id`  | partial update of `title`, `blocks`, `tags`                      |
 | `DELETE` | `/recipes/:id`  | delete                                                           |
 | `GET`    | `/tags`         | `[{tag, count}]` across all recipes                              |
+| `POST`   | `/recipes/:id/assets` | multipart image upload → `{id, contentType, size, url}`     |
+| `GET`    | `/assets/:id`   | the stored image or audio bytes                                  |
+| `POST`   | `/recipes/:id/voice` | multipart audio → transcribe, draft, append an `ai` block; returns the recipe |
 | `POST`   | `/recipes/draft` | `{transcript, title?}` → `{title, body, tags}` via Claude; 503 when off |
 
 ## Layout
@@ -140,7 +167,7 @@ brand/
 web/
   index.html            shell; loads Google Fonts, tokens.css, app.css, app.js
   app.css               layout + components on top of the tokens
-  app.js                hash router: #/ browse, #/new, #/r/:id, #/r/:id/edit
+  app.js                hash router: #/ browse, #/new (creates and redirects), #/r/:id notebook page
   manifest.webmanifest  PWA manifest (standalone, start_url /)
   sw.js                 service worker: caches the shell, passes /api through
   icons/                icon.svg source + 192/512 PNG + apple-touch-icon
@@ -152,9 +179,10 @@ backend/
   remy_api/
     __init__.py         create_app factory, db init, schema creation
     config.py           backend selection + no-collision schema isolation
-    models.py           Recipe (to_dict → camelCase JSON)
+    models.py           Recipe (blocks JSON + derived body), Asset (image/audio bytes)
     routes.py           /api blueprint
-    llm.py              dictation -> draft via claude-haiku-5-5 (structured output)
+    llm.py              transcript -> draft via claude-haiku-5-5 (structured output)
+    stt.py              audio -> transcript via OpenAI audio transcription
     seed.py             one-time seed when the table is empty
   scripts/
     migrate_sqlite_to_pg.py   one-shot SQLite → Postgres copier (guarded)
@@ -162,4 +190,5 @@ backend/
     test_config.py      backend-selection + schema-isolation unit tests
     test_routes.py      recipe CRUD/search tests on throwaway SQLite
     test_draft.py       draft endpoint with the model call mocked
+    test_assets.py      image upload/serve/prune, voice endpoint, STT client (mocked)
 ```

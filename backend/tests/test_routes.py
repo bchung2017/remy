@@ -51,12 +51,15 @@ class Recipes(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["title"], "Ratatouille")
         self.assertEqual(rows[0]["tags"], ["vegetable", "bake"])
+        self.assertEqual(rows[0]["blocks"][0]["type"], "text")
+        self.assertTrue(rows[0]["body"].startswith("1 eggplant"))   # derived from the block
 
     def test_create_read_update_delete(self):
         r = self.client.post("/api/recipes", json={"title": "Omelette", "body": "3 eggs. Butter.", "tags": "Eggs, breakfast, eggs"})
         self.assertEqual(r.status_code, 201)
         rec = r.get_json()
         self.assertEqual(rec["tags"], ["eggs", "breakfast"])  # normalized, deduped
+        self.assertEqual([b["type"] for b in rec["blocks"]], ["text"])   # legacy body -> one text block
 
         r = self.client.get(f"/api/recipes/{rec['id']}")
         self.assertEqual(r.status_code, 200)
@@ -70,6 +73,32 @@ class Recipes(unittest.TestCase):
 
         self.assertEqual(self.client.delete(f"/api/recipes/{rec['id']}").status_code, 204)
         self.assertEqual(self.client.get(f"/api/recipes/{rec['id']}").status_code, 404)
+
+    def test_blocks_round_trip_and_derive_body(self):
+        r = self.client.post("/api/recipes", json={})   # empty page
+        self.assertEqual(r.status_code, 201)
+        rec = r.get_json()
+        self.assertEqual(rec["title"], "Untitled")
+        self.assertEqual(rec["blocks"], [])
+        blocks = [
+            {"id": "b1", "type": "text", "text": "Whisk the eggs."},
+            {"type": "image", "asset": "abc", "caption": "pan"},
+            {"id": "b3", "type": "ai", "text": "Steps\n1. Fold.", "transcript": "um fold it", "asset": None},
+        ]
+        r = self.client.put(f"/api/recipes/{rec['id']}", json={"blocks": blocks})
+        self.assertEqual(r.status_code, 200)
+        out = r.get_json()
+        self.assertEqual([b["type"] for b in out["blocks"]], ["text", "image", "ai"])
+        self.assertEqual(out["blocks"][0]["id"], "b1")
+        self.assertTrue(out["blocks"][1]["id"])                      # server assigned
+        self.assertEqual(out["body"], "Whisk the eggs.\n\nSteps\n1. Fold.")   # image contributes nothing
+        titles = [x["title"] for x in self.client.get("/api/recipes?q=fold").get_json()]
+        self.assertEqual(titles, ["Untitled"])                        # search hits block text
+
+    def test_bad_blocks_are_400(self):
+        rid = self.client.post("/api/recipes", json={"title": "x"}).get_json()["id"]
+        for bad in ["nope", [{"type": "video"}], [{"type": "image"}], [{"type": "text", "text": 5}]]:
+            self.assertEqual(self.client.put(f"/api/recipes/{rid}", json={"blocks": bad}).status_code, 400, bad)
 
     def test_search_tag_and_sort(self):
         self.client.post("/api/recipes", json={"title": "Bread", "body": "flour water salt yeast", "tags": ["bake"]})
@@ -91,11 +120,11 @@ class Recipes(unittest.TestCase):
         self.assertEqual(tags, [{"tag": "bake", "count": 2}, {"tag": "vegetable", "count": 1}])
 
     def test_validation(self):
-        self.assertEqual(self.client.post("/api/recipes", json={}).status_code, 400)
-        self.assertEqual(self.client.post("/api/recipes", json={"title": "  "}).status_code, 400)
+        self.assertEqual(self.client.post("/api/recipes", json={"title": "  "}).get_json()["title"], "Untitled")
+        self.assertEqual(self.client.post("/api/recipes", json={"title": 3}).status_code, 400)
         self.assertEqual(self.client.post("/api/recipes", json={"title": "x", "body": 3}).status_code, 400)
         self.assertEqual(self.client.post("/api/recipes", json={"title": "x", "tags": 3}).status_code, 400)
-        self.assertEqual(self.client.put("/api/recipes/1", json={"title": ""}).status_code, 400)
+        self.assertEqual(self.client.put("/api/recipes/1", json={"title": ""}).get_json()["title"], "Untitled")
 
     def test_missing_is_404(self):
         self.assertEqual(self.client.get("/api/recipes/999").status_code, 404)

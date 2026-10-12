@@ -24,9 +24,9 @@ from remy_api.config import (  # noqa: E402
     pg_schema,
     postgres_engine_options,
 )
-from remy_api.models import Recipe  # noqa: E402
+from remy_api.models import Asset, Recipe  # noqa: E402
 
-TABLES = [Recipe.__table__]
+TABLES = [Recipe.__table__, Asset.__table__]
 
 
 def main() -> None:

@@ -40,6 +40,7 @@ def create_app() -> Flask:
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["REMY_BACKEND"] = cfg["backend"]
     app.config["REMY_DB_SCHEMA"] = cfg["schema"]
+    app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024   # uploads; routes cap assets at 8 MB
 
     db.init_app(app)
     CORS(app, resources={r"/api/*": {"origins": "*"}})

@@ -17,6 +17,10 @@ services:
       # the dashboard. Unset ⇒ the "Tidy up" button is hidden.
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Transcribes voice files for the AI block (OpenAI audio API). Secret.
+      # Unset ⇒ the AI button is hidden; text and image blocks still work.
+      - key: OPENAI_API_KEY
+        sync: false
       # remy's isolated Postgres schema (a namespace inside the one database).
       - key: DB_SCHEMA
         value: remy
