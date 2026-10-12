@@ -13,6 +13,10 @@ services:
       # not in this file. Unset ⇒ the app falls back to ephemeral SQLite.
       - key: DATABASE_URL
         sync: false
+      # Enables recipe drafting from dictation (claude-haiku-5-5). Secret; set in
+      # the dashboard. Unset ⇒ the "Tidy up" button is hidden.
+      - key: ANTHROPIC_API_KEY
+        sync: false
       # remy's isolated Postgres schema (a namespace inside the one database).
       - key: DB_SCHEMA
         value: remy

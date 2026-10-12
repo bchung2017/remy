@@ -1,8 +1,9 @@
 """HTTP routes for the remy API, all under /api."""
+import anthropic
 from flask import Blueprint, current_app, jsonify, request
 from sqlalchemy import or_
 
-from . import db
+from . import db, llm
 from .models import Recipe
 
 api = Blueprint("api", __name__, url_prefix="/api")
@@ -40,7 +41,35 @@ def health():
         "status": "ok",
         "backend": current_app.config.get("REMY_BACKEND"),
         "schema": current_app.config.get("REMY_DB_SCHEMA"),
+        "draft": llm.enabled(),
     }
+
+
+@api.post("/recipes/draft")
+def draft_recipe():
+    """Tidy a dictated/raw transcript into {title, body, tags} without saving it."""
+    if not llm.enabled():
+        return jsonify({"error": "drafting is off: ANTHROPIC_API_KEY is not set"}), 503
+    data = request.get_json(silent=True) or {}
+    transcript = data.get("transcript")
+    if not isinstance(transcript, str) or not transcript.strip():
+        return jsonify({"error": "transcript is required"}), 400
+    title_hint = data.get("title") if isinstance(data.get("title"), str) else ""
+    try:
+        draft = llm.draft_recipe(transcript.strip(), title_hint)
+    except anthropic.RateLimitError:
+        return jsonify({"error": "rate limited, try again in a minute"}), 429
+    except anthropic.APIConnectionError:
+        return jsonify({"error": "could not reach the model"}), 502
+    except anthropic.APIStatusError as e:
+        return jsonify({"error": f"model error ({e.status_code})"}), 502
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 422
+    return jsonify({
+        "title": draft.title.strip()[:200],
+        "body": draft.body.strip(),
+        "tags": [t for t in Recipe.pack_tags(draft.tags).split(",") if t],
+    })
 
 
 @api.get("/recipes")
