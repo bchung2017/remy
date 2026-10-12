@@ -1,10 +1,11 @@
 # remy
 
-A small recipe book. Each recipe is a notebook page: a title, tags, and an
-ordered list of blocks you add in place. Three block types: **Text**, **Image**
-(photo upload, stored in the database), and **AI** (a voice file that is
-transcribed, formatted into ingredients and steps by Claude, and kept as a
-block with the original audio). Browse, search, filter by tag, sort, delete.
+A small recipe book. Each recipe is a Jupyter-style notebook: a title, tags,
+and numbered cells you insert, move and delete from a toolbar. Three cell
+types: **Text**, **Image** (photo upload, stored in the database), and **AI**
+(input: a voice file; press Run; output: the recipe transcribed and formatted
+into ingredients and steps by Claude, with the audio kept). Browse, search,
+filter by tag, sort, delete.
 
 A **Flask + SQLite** JSON API plus a no-build static frontend, swapping to
 **Postgres/Supabase** via `DATABASE_URL`, isolated in its own schema so it can
@@ -14,7 +15,7 @@ Docker web service.
 ## Stack
 
 - **[Flask](https://flask.palletsprojects.com/)** — JSON API under `/api`, serves `web/` and `brand/tokens.css`
-- **Vanilla HTML/CSS/JS** frontend in `web/` (hash-routed, no bundler), styled from `brand/tokens.css`; pages autosave as you type
+- **Vanilla HTML/CSS/JS** frontend in `web/` (hash-routed, no bundler), styled from `brand/tokens.css`; notebooks autosave as you type
 - **Installable PWA**: `web/manifest.webmanifest` + `web/sw.js` (network-first shell cache, API never cached)
 - **AI block**: speech-to-text through OpenAI's audio transcription API (`OPENAI_API_KEY`), then formatting through the [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) and `claude-haiku-5-5` (`ANTHROPIC_API_KEY`). Both keys unset ⇒ the AI button is hidden; text and image blocks still work
 - **[Flask-SQLAlchemy](https://flask-sqlalchemy.palletsprojects.com/)** over **SQLite** by default
@@ -71,10 +72,16 @@ cd backend
 python reset_db.py --yes
 ```
 
-### Blocks, images, and the AI block
+### Cells, images, and the AI cell
 
-A recipe's `blocks` is an ordered JSON list. `body` is derived from the text of
-text and AI blocks, so search and list previews keep working.
+A recipe's `blocks` is the ordered cell list as JSON. `body` is derived from
+the text of text and AI cells, so search and list previews keep working.
+
+In the notebook: `+ Text`, `+ Image`, `+ AI` insert after the selected cell
+(or at the end). A selected cell takes ↑ ↓ and `× cell` from the toolbar or
+its own hover tools. With a cell selected and no field focused: `j`/`k` or
+the arrow keys move the selection, Shift+arrow moves the cell, `Enter` edits,
+`Escape` leaves the field, `d` deletes.
 
 ```
 {"id", "type": "text",  "text"}
@@ -86,11 +93,13 @@ text and AI blocks, so search and list previews keep working.
   only, 8 MB cap; the UI shrinks photos to 1600px JPEG first) and are served
   from `GET /api/assets/:id`. Bytes live in the database, so they survive
   Render's ephemeral disk. Assets no block references are pruned on save.
-- **AI** uploads a voice file to `POST /api/recipes/:id/voice`. Claude has no
+- **AI** is a cell with an input and an output. Choose a voice file, press
+  Run: the file goes to `POST /api/recipes/:id/voice`. Claude has no
   audio input, so the server transcribes it first (OpenAI audio transcription,
   `STT_MODEL` default `whisper-1`), then asks `claude-haiku-5-5` for
   `{title, body, tags}` through structured output and appends an `ai` block
-  holding the formatted text, the raw transcript and the audio. An untitled
+  holding the formatted text (the output), the raw transcript and the audio
+  (the input). The UI then moves it into the cell's position. An untitled
   page takes the drafted title; empty tags take the drafted tags. Needs both
   `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`; otherwise 503 and `/api/health`
   reports `voice: false`. Transcripts are capped at 8000 characters and output
@@ -167,7 +176,7 @@ brand/
 web/
   index.html            shell; loads Google Fonts, tokens.css, app.css, app.js
   app.css               layout + components on top of the tokens
-  app.js                hash router: #/ browse, #/new (creates and redirects), #/r/:id notebook page
+  app.js                hash router: #/ browse, #/new (creates and redirects), #/r/:id notebook
   manifest.webmanifest  PWA manifest (standalone, start_url /)
   sw.js                 service worker: caches the shell, passes /api through
   icons/                icon.svg source + 192/512 PNG + apple-touch-icon

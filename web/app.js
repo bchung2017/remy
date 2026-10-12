@@ -71,29 +71,36 @@ async function renderBrowse() {
   }));
 }
 
-// ---------- notebook page ----------
-function blockHtml(b) {
-  if (b.type === "image") return `
-    <figure class="block block-image" data-id="${esc(b.id)}">
+// ---------- notebook page (Jupyter-style cells) ----------
+const TYPE_LABEL = { text: "Text", image: "Image", ai: "AI" };
+
+function cellHtml(b, n) {
+  const gutter = `<div class="gutter"><span class="kind">${TYPE_LABEL[b.type] || "AI"}</span><span class="num">[${n}]</span></div>`;
+  const tools = `<div class="cell-tools">
+      <button data-act="up" title="Move up" aria-label="Move up">↑</button>
+      <button data-act="down" title="Move down" aria-label="Move down">↓</button>
+      <button data-act="del" title="Delete cell" aria-label="Delete cell">×</button>
+    </div>`;
+  let body;
+  if (b.type === "image") body = `
+    <div class="cell-in">
       <img src="/api/assets/${esc(b.asset)}" alt="${esc(b.caption)}">
-      <figcaption><input class="caption" placeholder="Caption" value="${esc(b.caption)}" aria-label="Caption"></figcaption>
-      <button class="x" title="Remove" aria-label="Remove block">×</button>
-    </figure>`;
-  if (b.type === "ai") return `
-    <div class="block block-ai" data-id="${esc(b.id)}">
-      <div class="ai-head"><span class="label">AI</span>${b.asset ? `<audio controls preload="none" src="/api/assets/${esc(b.asset)}"></audio>` : ""}</div>
-      <textarea class="text" rows="1" aria-label="Recipe text">${esc(b.text)}</textarea>
-      <button class="x" title="Remove" aria-label="Remove block">×</button>
+      <input class="caption" placeholder="Caption" value="${esc(b.caption)}" aria-label="Caption">
     </div>`;
-  if (b.type === "pending") return `
-    <div class="block block-ai pending" data-id="${esc(b.id)}">
-      <div class="ai-head"><span class="label">AI</span><span class="hint">${esc(b.note)}</span></div>
-    </div>`;
-  return `
-    <div class="block block-text" data-id="${esc(b.id)}">
-      <textarea class="text" rows="1" placeholder="Write here" aria-label="Text">${esc(b.text)}</textarea>
-      <button class="x" title="Remove" aria-label="Remove block">×</button>
-    </div>`;
+  else if (b.type === "ai" && b.draft) body = `
+    <div class="cell-in ai-in">
+      <label class="btn btn-sm" for="file-${esc(b.id)}">Choose voice file</label>
+      <input id="file-${esc(b.id)}" class="ai-file" type="file" accept="audio/*,video/mp4,.m4a" hidden>
+      <span class="filename hint">No file yet</span>
+      <button class="btn btn-sm btn-primary run" disabled>▶ Run</button>
+    </div>
+    <div class="cell-out hint" hidden></div>`;
+  else if (b.type === "ai") body = `
+    <div class="cell-in ai-in"><audio controls preload="none" src="/api/assets/${esc(b.asset)}"></audio></div>
+    <div class="cell-out"><textarea class="text" rows="1" aria-label="Formatted recipe">${esc(b.text)}</textarea></div>`;
+  else body = `
+    <div class="cell-in"><textarea class="text" rows="1" placeholder="Write here" aria-label="Text">${esc(b.text)}</textarea></div>`;
+  return `<section class="cell cell-${b.type} ${b.draft ? "draft" : ""}" data-id="${esc(b.id)}" data-type="${b.type}" tabindex="-1">${gutter}<div class="cell-body">${body}</div>${tools}</section>`;
 }
 
 const grow = (ta) => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; };
@@ -119,42 +126,50 @@ async function renderRecipe(id) {
   let saveTimer, saving = Promise.resolve();
 
   view.innerHTML = `
-    <article class="page">
-      <header class="page-head">
+    <article class="nb">
+      <header class="nb-head">
         <input class="title display-lg" id="title" value="${esc(r.title)}" placeholder="Untitled" aria-label="Title">
-        <div class="page-meta">
+        <div class="nb-meta">
           <input class="tagsin" id="tags" value="${esc(r.tags.join(", "))}" placeholder="tags, comma separated" aria-label="Tags">
           <span class="status" id="status">${when(r.updatedAt)}</span>
         </div>
       </header>
-      <div class="blocks" id="blocks">${r.blocks.map(blockHtml).join("")}</div>
-      <div class="adders">
-        <button class="btn" id="add-text">Text</button>
-        <label class="btn" for="add-image">Image</label>
+      <div class="nb-toolbar" role="toolbar" aria-label="Cells">
+        <button class="btn btn-sm" data-add="text">+ Text</button>
+        <label class="btn btn-sm" for="add-image">+ Image</label>
         <input id="add-image" type="file" accept="image/*" hidden>
-        ${h.voice ? `<label class="btn" for="add-ai">AI</label><input id="add-ai" type="file" accept="audio/*,video/mp4,.m4a" hidden>` : ""}
+        ${h.voice ? `<button class="btn btn-sm" data-add="ai">+ AI</button>` : `<button class="btn btn-sm" disabled title="Set OPENAI_API_KEY and ANTHROPIC_API_KEY to enable">+ AI</button>`}
+        <span class="sep"></span>
+        <button class="btn btn-sm btn-ghost" id="t-up" title="Move cell up">↑</button>
+        <button class="btn btn-sm btn-ghost" id="t-down" title="Move cell down">↓</button>
+        <button class="btn btn-sm btn-ghost" id="t-del" title="Delete cell">× cell</button>
       </div>
+      <div class="cells" id="cells">${r.blocks.map((b, i) => cellHtml(b, i + 1)).join("")}</div>
+      <p class="empty" id="nocells" ${r.blocks.length ? "hidden" : ""}>Empty notebook. Add a cell above.</p>
       <p class="error" id="err" hidden></p>
-      <footer class="page-foot">
+      <footer class="nb-foot">
         <button class="btn btn-danger" id="del">Delete recipe</button>
         <a class="btn btn-ghost" href="#/">Back</a>
       </footer>
     </article>`;
 
-  const blocksEl = view.querySelector("#blocks");
+  const cellsEl = view.querySelector("#cells");
   const status = view.querySelector("#status");
   const err = (msg) => { const el = view.querySelector("#err"); el.textContent = msg; el.hidden = !msg; };
+  const transcripts = Object.fromEntries(r.blocks.filter((b) => b.type === "ai").map((b) => [b.id, b.transcript || ""]));
 
-  // the page's state is the DOM; read blocks back out of it on save
-  const readBlocks = () => [...blocksEl.querySelectorAll(".block")].map((el) => {
-    const id = el.dataset.id;
-    if (el.classList.contains("pending")) return null;
-    if (el.classList.contains("block-image")) return { id, type: "image", asset: el.querySelector("img").getAttribute("src").split("/").pop(), caption: el.querySelector(".caption").value };
-    if (el.classList.contains("block-ai")) { const a = el.querySelector("audio"); return { id, type: "ai", text: el.querySelector(".text").value, asset: a ? a.getAttribute("src").split("/").pop() : null, transcript: el.dataset.transcript || "" }; }
-    return { id, type: "text", text: el.querySelector(".text").value };
-  }).filter(Boolean);
-  blocksEl.querySelectorAll(".block-ai[data-id]").forEach((el) => { const b = r.blocks.find((x) => x.id === el.dataset.id); if (b) el.dataset.transcript = b.transcript || ""; });
-
+  // --- state lives in the DOM; blocks are read back in order on save (draft AI cells are skipped) ---
+  const readBlocks = () => [...cellsEl.querySelectorAll(".cell:not(.draft)")].map((el) => {
+    const id = el.dataset.id, type = el.dataset.type;
+    if (type === "image") return { id, type, asset: el.querySelector("img").getAttribute("src").split("/").pop(), caption: el.querySelector(".caption").value };
+    if (type === "ai") return { id, type, text: el.querySelector(".text").value, asset: el.querySelector("audio").getAttribute("src").split("/").pop(), transcript: transcripts[id] || "" };
+    return { id, type, text: el.querySelector(".text").value };
+  });
+  const renumber = () => {
+    const cells = cellsEl.querySelectorAll(".cell");
+    cells.forEach((el, i) => { el.querySelector(".num").textContent = `[${i + 1}]`; });
+    view.querySelector("#nocells").hidden = cells.length > 0;
+  };
   const save = () => {
     clearTimeout(saveTimer);
     status.textContent = "Saving…";
@@ -168,42 +183,96 @@ async function renderRecipe(id) {
   };
   const saveSoon = () => { clearTimeout(saveTimer); status.textContent = "Editing"; saveTimer = setTimeout(save, 700); };
 
+  // --- selection ---
+  let selected = null;
+  const select = (el) => { selected?.classList.remove("selected"); selected = el; el?.classList.add("selected"); };
+  cellsEl.addEventListener("focusin", (e) => { const c = e.target.closest(".cell"); if (c) select(c); });
+  cellsEl.addEventListener("mousedown", (e) => { const c = e.target.closest(".cell"); if (c) select(c); });
+
+  const move = (el, dir) => {
+    if (!el) return;
+    const sib = dir < 0 ? el.previousElementSibling : el.nextElementSibling;
+    if (!sib) return;
+    dir < 0 ? sib.before(el) : sib.after(el);
+    renumber(); el.focus({ preventScroll: true }); el.scrollIntoView({ block: "nearest" }); save();
+  };
+  const remove = (el) => {
+    if (!el) return;
+    const next = el.nextElementSibling || el.previousElementSibling;
+    el.remove(); renumber(); select(next); next?.focus({ preventScroll: true });
+    if (!el.classList.contains("draft")) save();
+  };
+
+  // --- wiring per cell ---
   const wire = (el) => {
     el.querySelectorAll("textarea").forEach((ta) => { grow(ta); ta.addEventListener("input", () => { grow(ta); saveSoon(); }); ta.addEventListener("blur", save); });
     el.querySelectorAll("input.caption").forEach((i) => { i.addEventListener("input", saveSoon); i.addEventListener("blur", save); });
-    el.querySelectorAll(".x").forEach((x) => x.addEventListener("click", () => { x.closest(".block").remove(); save(); }));
+    el.querySelectorAll(".cell-tools button").forEach((b) => b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const act = b.dataset.act;
+      if (act === "up") move(el, -1); else if (act === "down") move(el, 1); else remove(el);
+    }));
+    const file = el.querySelector(".ai-file");
+    if (file) {
+      const run = el.querySelector(".run"), name = el.querySelector(".filename"), out = el.querySelector(".cell-out");
+      file.addEventListener("change", () => { name.textContent = file.files[0]?.name || "No file yet"; run.disabled = !file.files[0]; });
+      run.addEventListener("click", async () => {
+        const f = file.files[0]; if (!f) return;
+        run.disabled = true; run.textContent = "Running…"; out.hidden = false; out.textContent = "Transcribing, then formatting with Claude…"; err("");
+        await save();   // flush edits; the server appends to the stored page, we then move the cell into place
+        try {
+          r = await api.voice(id, f);
+          const blk = r.blocks[r.blocks.length - 1];
+          transcripts[blk.id] = blk.transcript || "";
+          el.insertAdjacentHTML("afterend", cellHtml(blk, 0));
+          const real = el.nextElementSibling; wire(real); el.remove(); renumber(); select(real);
+          view.querySelector("#title").value = r.title; view.querySelector("#tags").value = r.tags.join(", ");
+          await save();   // persist the cell's position (server appended it at the end)
+        } catch (ex) {
+          err(ex.message); out.textContent = "Failed: " + ex.message; run.disabled = false; run.textContent = "▶ Run";
+        }
+      });
+    }
   };
-  wire(blocksEl);
+  cellsEl.querySelectorAll(".cell").forEach(wire);
   ["#title", "#tags"].forEach((sel) => { const i = view.querySelector(sel); i.addEventListener("input", saveSoon); i.addEventListener("blur", save); });
 
-  const append = (b) => { blocksEl.insertAdjacentHTML("beforeend", blockHtml(b)); const el = blocksEl.lastElementChild; wire(el); return el; };
-
-  view.querySelector("#add-text").addEventListener("click", () => { append({ id: uid(), type: "text", text: "" }).querySelector("textarea").focus(); save(); });
-
+  // insert after the selected cell, else at the end
+  const insert = (b) => {
+    const html = cellHtml(b, 0);
+    if (selected && selected.parentElement === cellsEl) selected.insertAdjacentHTML("afterend", html);
+    else cellsEl.insertAdjacentHTML("beforeend", html);
+    const el = selected?.parentElement === cellsEl ? selected.nextElementSibling : cellsEl.lastElementChild;
+    wire(el); renumber(); select(el);
+    (el.querySelector("textarea") || el).focus({ preventScroll: true }); el.scrollIntoView({ block: "nearest" });
+    return el;
+  };
+  view.querySelectorAll("[data-add]").forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.add === "text") { insert({ id: uid(), type: "text", text: "" }); save(); }
+    else insert({ id: "draft-" + uid(), type: "ai", draft: true });
+  }));
   view.querySelector("#add-image").addEventListener("change", async (e) => {
     const file = e.target.files[0]; e.target.value = ""; if (!file) return;
     status.textContent = "Uploading…"; err("");
     try {
       const a = await api.upload(id, await shrinkImage(file));
-      append({ id: uid(), type: "image", asset: a.id, caption: "" });
+      insert({ id: uid(), type: "image", asset: a.id, caption: "" });
       await save();
     } catch (ex) { status.textContent = "Not saved"; err(ex.message); }
   });
+  view.querySelector("#t-up").addEventListener("click", () => move(selected, -1));
+  view.querySelector("#t-down").addEventListener("click", () => move(selected, 1));
+  view.querySelector("#t-del").addEventListener("click", () => remove(selected));
 
-  const ai = view.querySelector("#add-ai");
-  if (ai) ai.addEventListener("change", async (e) => {
-    const file = e.target.files[0]; e.target.value = ""; if (!file) return;
-    await save();   // flush edits first; the server appends to the stored page
-    const ph = append({ id: "pending-" + uid(), type: "pending", note: "Transcribing and formatting…" });
-    err("");
-    try {
-      r = await api.voice(id, file);
-      ph.remove();
-      const blk = r.blocks[r.blocks.length - 1];
-      const el = append(blk); el.dataset.transcript = blk.transcript || "";
-      view.querySelector("#title").value = r.title; view.querySelector("#tags").value = r.tags.join(", ");
-      status.textContent = "Saved";
-    } catch (ex) { ph.remove(); err(ex.message); }
+  // keyboard: with a cell selected and no field focused, j/k or arrows move selection, shift+arrows move the cell, d deletes
+  view.querySelector(".nb").addEventListener("keydown", (e) => {
+    const inField = /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName);
+    if (e.key === "Escape" && inField) { document.activeElement.blur(); selected?.focus(); return; }
+    if (inField || !selected) return;
+    if (e.key === "ArrowUp" || e.key === "k") { e.preventDefault(); e.shiftKey ? move(selected, -1) : (selected.previousElementSibling && (select(selected.previousElementSibling), selected.focus())); }
+    else if (e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); e.shiftKey ? move(selected, 1) : (selected.nextElementSibling && (select(selected.nextElementSibling), selected.focus())); }
+    else if (e.key === "Enter") { e.preventDefault(); (selected.querySelector("textarea, input.caption") || selected).focus(); }
+    else if (e.key === "d" || e.key === "Delete") { e.preventDefault(); remove(selected); }
   });
 
   const del = view.querySelector("#del");
