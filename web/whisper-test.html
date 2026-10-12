@@ -79,7 +79,12 @@
   const fmt = (b) => b > 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.round(b / 1e3) + " kB";
 
   $("ua").textContent = navigator.userAgent;
-  $("gpu").innerHTML = "gpu" in navigator ? `<span class="ok">available</span>` : `<span class="bad">not available (WASM fallback)</span>`;
+  // navigator.gpu can exist with no usable adapter (Android Chrome on many phones), so probe for one.
+  let gpuOk = false;
+  (async () => {
+    try { gpuOk = !!(navigator.gpu && await navigator.gpu.requestAdapter()); } catch { gpuOk = false; }
+    $("gpu").innerHTML = gpuOk ? `<span class="ok">adapter available</span>` : `<span class="bad">no adapter (${"gpu" in navigator ? "API present but requestAdapter() returned null" : "API absent"}), using WASM</span>`;
+  })();
   async function storageInfo() {
     try { const e = await navigator.storage.estimate(); const p = await navigator.storage.persisted?.(); $("storage").textContent = `${fmt(e.usage)} used of ${fmt(e.quota)} quota, persistent: ${p}`; }
     catch (err) { $("storage").textContent = "estimate unavailable: " + err.message; }
@@ -95,22 +100,28 @@
     else if (p.status === "ready") log("pipeline ready", "ok");
   }
 
-  $("load").addEventListener("click", async () => {
-    $("load").disabled = true; $("bars").innerHTML = ""; asr = null;
-    const model = $("model").value;
-    let device = $("device").value; if (device === "auto") device = "gpu" in navigator ? "webgpu" : "wasm";
-    const dtype = $("dtype").value;
+  async function load(model, device, dtype) {
+    $("bars").innerHTML = "";
     log(`loading ${model} on ${device} (dtype ${dtype})`);
     const t0 = performance.now();
-    try {
-      asr = await pipeline("automatic-speech-recognition", model, { device, dtype, progress_callback: progress });
-      const ms = Math.round(performance.now() - t0);
-      $("loadtime").textContent = `${model} on ${device} in ${(ms / 1000).toFixed(1)} s`;
-      log(`loaded in ${ms} ms. Reload the page and press Load again: a cached load should take well under a second plus model init.`, "ok");
-      $("rec").disabled = false;
-    } catch (err) {
+    asr = await pipeline("automatic-speech-recognition", model, { device, dtype, progress_callback: progress });
+    const ms = Math.round(performance.now() - t0);
+    $("loadtime").textContent = `${model} on ${device} (${dtype}) in ${(ms / 1000).toFixed(1)} s`;
+    log(`loaded in ${ms} ms. Reload the page and press Load again to time a cached load.`, "ok");
+    $("rec").disabled = false;
+  }
+  $("load").addEventListener("click", async () => {
+    $("load").disabled = true; asr = null;
+    const model = $("model").value, dtype = $("dtype").value;
+    let device = $("device").value;
+    if (device === "auto") { try { gpuOk = !!(navigator.gpu && await navigator.gpu.requestAdapter()); } catch { gpuOk = false; } device = gpuOk ? "webgpu" : "wasm"; }
+    try { await load(model, device, dtype); }
+    catch (err) {
       log("load failed: " + (err?.message || err), "bad");
-      if (device === "webgpu") log("tip: pick wasm in the device menu and retry; if q8 fails on webgpu, try fp16");
+      if (device === "webgpu") {
+        log("retrying on wasm");
+        try { await load(model, "wasm", dtype); } catch (e2) { log("wasm load failed too: " + (e2?.message || e2), "bad"); }
+      }
     }
     $("load").disabled = false; storageInfo();
   });
