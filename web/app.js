@@ -21,9 +21,6 @@ const api = {
   remove: (id) => api.req("DELETE", "/recipes/" + id),
 };
 
-const health = api.req("GET", "/health").catch(() => ({}));
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const when = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "");
 
@@ -86,24 +83,12 @@ async function renderRecipe(id) {
       <div class="meta"><span>updated ${when(r.updatedAt)}</span>${r.tags.map((t) => `<a class="tag" href="#/" data-tag="${esc(t)}">${esc(t)}</a>`).join("")}</div>
       <pre>${esc(r.body)}</pre>
       <div class="actions">
-        ${"speechSynthesis" in window ? `<button class="btn" id="speak">Read aloud</button>` : ""}
         <a class="btn" href="#/r/${r.id}/edit">Edit</a>
         <button class="btn btn-danger" id="del">Delete</button>
         <a class="btn btn-ghost" href="#/">Back</a>
       </div>
     </article>`;
   view.querySelectorAll(".meta .tag").forEach((a) => a.addEventListener("click", () => { browse.tag = a.dataset.tag; browse.q = ""; saveBrowse(); }));
-  const speak = view.querySelector("#speak");
-  if (speak) {
-    speechSynthesis.cancel();
-    speak.addEventListener("click", () => {
-      if (speechSynthesis.speaking) { speechSynthesis.cancel(); speak.textContent = "Read aloud"; return; }
-      const u = new SpeechSynthesisUtterance(`${r.title}. ${r.body}`);
-      u.lang = navigator.language || "en-US";
-      u.onend = u.onerror = () => { speak.textContent = "Read aloud"; };
-      speechSynthesis.speak(u); speak.textContent = "Stop";
-    });
-  }
   const del = view.querySelector("#del");
   del.addEventListener("click", () => {
     del.outerHTML = `<span class="confirm">Delete this recipe? <button class="btn btn-danger" id="yes">Delete</button><button class="btn btn-ghost" id="no">Keep</button></span>`;
@@ -118,15 +103,7 @@ async function renderForm(id) {
   view.innerHTML = `
     <form class="form" id="f">
       <div class="row"><label for="title">Title</label><input id="title" required maxlength="200" value="${esc(r.title)}"></div>
-      <div class="row">
-        <div class="rowhead"><label for="body">Recipe</label>
-          <span class="rowtools">
-            ${SR ? `<button class="btn btn-ghost" type="button" id="mic">Dictate</button>` : ""}
-            <button class="btn btn-ghost" type="button" id="tidy" hidden>Tidy up</button>
-          </span></div>
-        <textarea id="body">${esc(r.body)}</textarea>
-        <span class="hint" id="interim"></span>
-      </div>
+      <div class="row"><label for="body">Recipe</label><textarea id="body">${esc(r.body)}</textarea></div>
       <div class="row"><label for="tags">Tags</label><input id="tags" value="${esc(r.tags.join(", "))}" placeholder="comma separated"><span class="hint">Optional.</span></div>
       <p class="error" id="err" hidden></p>
       <div class="actions" style="margin-top:0;border:0;padding:0">
@@ -135,53 +112,15 @@ async function renderForm(id) {
       </div>
     </form>`;
   const f = view.querySelector("#f");
-  const err = (msg) => { const el = view.querySelector("#err"); el.textContent = msg; el.hidden = !msg; };
-
-  // dictation: Web Speech API, final phrases appended to the body, interim shown below it
-  const mic = view.querySelector("#mic");
-  let rec = null;
-  if (mic) mic.addEventListener("click", () => {
-    if (rec) { rec.stop(); return; }
-    rec = new SR(); rec.continuous = true; rec.interimResults = true; rec.lang = navigator.language || "en-US";
-    const interim = view.querySelector("#interim");
-    rec.onresult = (e) => {
-      let live = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) f.body.value = (f.body.value.trimEnd() + " " + t.trim()).trim();
-        else live += t;
-      }
-      interim.textContent = live;
-    };
-    rec.onerror = (e) => { if (e.error !== "no-speech" && e.error !== "aborted") err("Microphone: " + e.error); };
-    rec.onend = () => { rec = null; mic.textContent = "Dictate"; interim.textContent = ""; };
-    rec.start(); mic.textContent = "Stop"; err("");
-  });
-
-  // tidy up: send the raw dump to the server, fill the form, nothing saved yet
-  const tidy = view.querySelector("#tidy");
-  health.then((h) => { tidy.hidden = !h.draft; });
-  tidy.addEventListener("click", async () => {
-    if (rec) rec.stop();
-    const transcript = f.body.value.trim();
-    if (!transcript) { err("Nothing to tidy. Dictate or type the recipe first."); return; }
-    tidy.disabled = true; tidy.textContent = "Tidying…"; err("");
-    try {
-      const d = await api.req("POST", "/recipes/draft", { transcript, title: f.title.value });
-      if (!f.title.value.trim()) f.title.value = d.title;
-      f.body.value = d.body;
-      if (!f.tags.value.trim()) f.tags.value = d.tags.join(", ");
-    } catch (e) { err(e.message); }
-    tidy.disabled = false; tidy.textContent = "Tidy up";
-  });
-
   f.addEventListener("submit", async (e) => {
     e.preventDefault();
     const body = { title: f.title.value, body: f.body.value, tags: f.tags.value };
     try {
       const saved = id ? await api.update(id, body) : await api.create(body);
       location.hash = `#/r/${saved.id}`;
-    } catch (e) { err(e.message); }
+    } catch (err) {
+      const el = view.querySelector("#err"); el.textContent = err.message; el.hidden = false;
+    }
   });
   f.title.focus();
 }
@@ -195,5 +134,5 @@ function route() {
   if ((m = h.match(/^#\/r\/(\d+)$/))) return renderRecipe(m[1]);
   location.hash = "#/";
 }
-window.addEventListener("hashchange", () => { if ("speechSynthesis" in window) speechSynthesis.cancel(); route(); });
+window.addEventListener("hashchange", route);
 route();

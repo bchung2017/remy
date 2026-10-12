@@ -1,9 +1,8 @@
 # remy
 
 A small recipe book. Each recipe is a title, a freeform text body and optional
-tags; browse, search, filter by tag, sort, create, edit, delete. Dictate a
-recipe with the browser's speech recognition, let Claude tidy the dump into
-ingredients and steps, and have the page read it back while you cook.
+tags; browse, search, filter by tag, sort, create, edit, delete. The API can
+also turn a raw spoken-style dump into a tidy draft with Claude.
 
 A **Flask + SQLite** JSON API plus a no-build static frontend, swapping to
 **Postgres/Supabase** via `DATABASE_URL`, isolated in its own schema so it can
@@ -15,8 +14,7 @@ Docker web service.
 - **[Flask](https://flask.palletsprojects.com/)** — JSON API under `/api`, serves `web/` and `brand/tokens.css`
 - **Vanilla HTML/CSS/JS** frontend in `web/` (hash-routed, no bundler), styled from `brand/tokens.css`
 - **Installable PWA**: `web/manifest.webmanifest` + `web/sw.js` (network-first shell cache, API never cached)
-- **Dictation and read-aloud** via the browser's Web Speech API (no backend, no key)
-- **Tidy up** via the [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) and `claude-haiku-5-5`, on only when `ANTHROPIC_API_KEY` is set
+- **Drafting endpoint** via the [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) and `claude-haiku-5-5`, on only when `ANTHROPIC_API_KEY` is set
 - **[Flask-SQLAlchemy](https://flask-sqlalchemy.palletsprojects.com/)** over **SQLite** by default
 - **Postgres/Supabase** when `DATABASE_URL` is set, pinned to `DB_SCHEMA`
   (the `stackify-v1` no-collision schema pattern)
@@ -71,21 +69,20 @@ cd backend
 python reset_db.py --yes
 ```
 
-### Dictation and drafting
+### Drafting with Claude
 
-- **Dictate** (new/edit form) uses `SpeechRecognition` in the browser: Chrome,
-  Edge and iOS Safari. The button does not appear in browsers without it
-  (Firefox). Chrome sends the audio to Google's recognizer.
-- **Tidy up** posts the raw text to `POST /api/recipes/draft`, which asks
-  `claude-haiku-5-5` for `{title, body, tags}` through structured output and
-  fills the form. Nothing is saved until you press Create. Set
-  `ANTHROPIC_API_KEY` to enable it; unset, the endpoint returns 503 and the
-  button is hidden. Transcripts are capped at 8000 characters and output at
-  2000 tokens, so one call costs well under a tenth of a cent.
-- **Read aloud** (display page) uses `speechSynthesis`, offline, free.
-- The app has no auth: anyone who can reach the URL can call `/draft` on your
-  key. Fine for a personal deploy; add a secret header or a rate limit before
-  sharing the link widely.
+`POST /api/recipes/draft` takes `{transcript, title?}` (a dictated or typed
+dump) and asks `claude-haiku-5-5` for `{title, body, tags}` through structured
+output. Nothing is saved; the caller decides what to do with the draft. The
+body comes back as plain text: an Ingredients list, a blank line, numbered
+Steps. Set `ANTHROPIC_API_KEY` to enable it; unset, the endpoint returns 503
+and `/api/health` reports `draft: false`. Transcripts are capped at 8000
+characters and output at 2000 tokens, so one call costs well under a tenth of
+a cent.
+
+The app has no auth: anyone who can reach the URL can call `/draft` on your
+key. Fine for a personal deploy; add a secret header or a rate limit before
+sharing the link widely. The web UI does not call this endpoint yet.
 
 Additional env vars: `DATABASE_SSL=disable` (local plaintext Postgres only),
 `PGPOOL_MAX` (max pool connections, default 3), `REMY_DB_RESET=1` (drop +
