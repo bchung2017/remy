@@ -115,7 +115,28 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--copper); ou
 .ai-in { display: grid; gap: var(--space-2); }
 .ai-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .ai-row .interim { flex: 1 1 120px; min-width: 0; font-style: italic; }
-.dictate.live { color: var(--tomato); border-color: var(--tomato); }
+/* recording panel: full screen, state readable from across the kitchen */
+body.rec-open { overflow: hidden; }
+.rec {
+  position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; gap: var(--space-4);
+  padding: calc(var(--space-6) + env(safe-area-inset-top, 0px)) var(--space-4) calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
+  background: var(--surface); color: var(--ink); overflow-y: auto;
+}
+.rec-top { display: flex; align-items: center; gap: var(--space-3); max-width: 720px; width: 100%; margin: 0 auto; }
+.rec-dot { width: 28px; height: 28px; border-radius: var(--radius-pill); background: var(--tomato); box-shadow: 0 0 0 0 rgba(181, 51, 42, .5); animation: rec-pulse 1.4s ease-out infinite; flex: none; }
+@keyframes rec-pulse { 0% { box-shadow: 0 0 0 0 rgba(181, 51, 42, .55); } 100% { box-shadow: 0 0 0 18px rgba(181, 51, 42, 0); } }
+.rec-label { flex: 1; font: 400 34px/1.1 var(--font-display); color: var(--aubergine); }
+.rec-error .rec-label { color: var(--tomato); font: 700 17px/24px var(--font-body); }
+.rec-error .rec-dot { animation: none; background: var(--hairline); }
+.rec-time { font: 400 20px/24px var(--font-ticket); font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+.rec-meter { display: block; width: 100%; max-width: 720px; height: 80px; margin: 0 auto; }
+.rec-text { flex: 1; width: 100%; max-width: 720px; margin: 0 auto; font: 400 24px/34px var(--font-body); min-height: 3em; }
+.rec-interim { color: var(--ink-muted); font-style: italic; }
+.rec-hint { width: 100%; max-width: 720px; margin: 0 auto; color: var(--ink-muted); font-size: 15px; line-height: 22px; }
+.rec-actions { display: flex; gap: var(--space-3); width: 100%; max-width: 720px; margin: 0 auto; }
+.rec-actions .btn { flex: 1; justify-content: center; min-height: 60px; font-size: 20px; }
+.rec-actions .rec-done { flex: 2; }
+@media (prefers-reduced-motion: reduce) { .rec-dot { animation: none; box-shadow: 0 0 0 6px rgba(181, 51, 42, .3); } }
 .transcript-view summary { cursor: pointer; }
 .transcript-view p { margin: var(--space-1) 0 0; color: var(--ink-muted); font-size: 15px; line-height: 22px; white-space: pre-wrap; }
 .hint { color: var(--ink-muted); font-size: 14px; line-height: 20px; }

@@ -26,6 +26,81 @@ const api = {
 const health = api.req("GET", "/health").catch(() => ({}));
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;   // browser speech-to-text; Chrome, Edge, iOS Safari
 
+// Full-screen recording panel: big live state (pulsing dot, mic level, timer, the words as
+// they land) and one big Done button. Chrome ends recognition on silence, so we restart it
+// until Done or Cancel. onText(final) is called for each committed phrase; onDone(ok).
+function startDictation({ onText, onDone }) {
+  const panel = document.createElement("div");
+  panel.className = "rec"; panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", "Recording");
+  panel.innerHTML = `
+    <div class="rec-top"><span class="rec-dot" aria-hidden="true"></span><span class="rec-label">Listening</span><span class="rec-time">0:00</span></div>
+    <canvas class="rec-meter" width="600" height="80" aria-hidden="true"></canvas>
+    <div class="rec-text" aria-live="polite"><span class="rec-final"></span><span class="rec-interim"></span></div>
+    <p class="rec-hint">Say the recipe the way you'd tell a friend. Pause whenever you like.</p>
+    <div class="rec-actions"><button class="btn btn-ghost rec-cancel">Cancel</button><button class="btn btn-primary rec-done">Done</button></div>`;
+  document.body.appendChild(panel); document.body.classList.add("rec-open");
+  const $ = (c) => panel.querySelector(c);
+  const label = $(".rec-label"), finalEl = $(".rec-final"), interimEl = $(".rec-interim"), timeEl = $(".rec-time");
+
+  // mic level meter (separate capture; recognition keeps its own). Fails quietly on browsers that
+  // won't share the mic twice: the pulsing dot still shows state.
+  let stream = null, raf = 0, ctx = null;
+  const bars = new Array(48).fill(0);
+  const canvas = $(".rec-meter"), g = canvas.getContext("2d");
+  const fill = getComputedStyle(document.documentElement).getPropertyValue("--copper").trim() || "#9e4e1c";
+  navigator.mediaDevices?.getUserMedia({ audio: true }).then((st) => {
+    stream = st; ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ctx.createMediaStreamSource(st), an = ctx.createAnalyser(); an.fftSize = 512; src.connect(an);
+    const buf = new Uint8Array(an.fftSize);
+    const draw = () => {
+      an.getByteTimeDomainData(buf);
+      let sum = 0; for (const v of buf) { const d = (v - 128) / 128; sum += d * d; }
+      bars.push(Math.min(1, Math.sqrt(sum / buf.length) * 4)); bars.shift();
+      g.clearRect(0, 0, canvas.width, canvas.height); g.fillStyle = fill;
+      const w = canvas.width / bars.length;
+      bars.forEach((b, i) => { const h = Math.max(3, b * canvas.height); g.fillRect(i * w + 1, (canvas.height - h) / 2, w - 2, h); });
+      raf = requestAnimationFrame(draw);
+    };
+    draw();
+  }).catch(() => { canvas.hidden = true; });
+
+  const t0 = Date.now();
+  const tick = setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000); timeEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }, 500);
+
+  let rec = null, stopping = false, finalText = "";
+  const close = (ok) => {
+    if (stopping) return; stopping = true;
+    clearInterval(tick); cancelAnimationFrame(raf);
+    stream?.getTracks().forEach((t) => t.stop()); ctx?.close().catch(() => {});
+    try { rec?.stop(); } catch {}
+    panel.remove(); document.body.classList.remove("rec-open");
+    onDone(ok);
+  };
+  const begin = () => {
+    rec = new SR(); rec.continuous = true; rec.interimResults = true; rec.lang = navigator.language || "en-US";
+    rec.onresult = (e) => {
+      let live = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) { finalText = (finalText + " " + t.trim()).trim(); onText(t.trim()); } else live += t;
+      }
+      finalEl.textContent = finalText; interimEl.textContent = live ? " " + live : "";
+      label.textContent = "Listening"; panel.scrollTop = panel.scrollHeight;
+    };
+    rec.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") { label.textContent = "Microphone blocked. Allow it in the site settings, then try again."; panel.classList.add("rec-error"); stopping = true; try { rec.stop(); } catch {} stopping = false; rec = null; }
+      else if (e.error !== "no-speech" && e.error !== "aborted") label.textContent = "Hiccup: " + e.error + ". Still listening";
+    };
+    rec.onend = () => { if (!stopping && rec) { try { rec.start(); } catch {} } };   // Chrome stops on silence; keep going
+    rec.start();
+  };
+  begin();
+  $(".rec-done").addEventListener("click", () => close(true));
+  $(".rec-cancel").addEventListener("click", () => close(false));
+  panel.addEventListener("keydown", (e) => { if (e.key === "Escape") close(false); });
+  $(".rec-done").focus();
+}
+
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const when = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "");
 const uid = () => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, "") : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -92,7 +167,7 @@ function cellHtml(b, n) {
     <div class="cell-in ai-in">
       <div class="ai-row">
         ${SR ? `<button class="btn btn-sm dictate">● Dictate</button>` : `<span class="hint">No speech recognition in this browser. Type instead.</span>`}
-        <span class="interim hint"></span>
+        <span class="hint ai-note"></span>
         <button class="btn btn-sm btn-primary run" disabled>▶ Run</button>
       </div>
       <textarea class="transcript" rows="1" placeholder="Say the recipe the way you'd tell a friend. Edit here before running." aria-label="Transcript"></textarea>
@@ -217,27 +292,18 @@ async function renderRecipe(id) {
     }));
     const run = el.querySelector(".run");
     if (run) {
-      const ta = el.querySelector(".transcript"), out = el.querySelector(".cell-out"), mic = el.querySelector(".dictate"), interim = el.querySelector(".interim");
-      let rec = null;
+      const ta = el.querySelector(".transcript"), out = el.querySelector(".cell-out"), mic = el.querySelector(".dictate"), note = el.querySelector(".ai-note");
       const refresh = () => { run.disabled = !ta.value.trim(); grow(ta); };
       ta.addEventListener("input", refresh);
       if (mic) mic.addEventListener("click", () => {
-        if (rec) { rec.stop(); return; }
-        rec = new SR(); rec.continuous = true; rec.interimResults = true; rec.lang = navigator.language || "en-US";
-        rec.onresult = (e) => {
-          let live = "";
-          for (let i = e.resultIndex; i < e.results.length; i++) {
-            const t = e.results[i][0].transcript;
-            if (e.results[i].isFinal) ta.value = (ta.value.trimEnd() + " " + t.trim()).trim(); else live += t;
-          }
-          interim.textContent = live; refresh();
-        };
-        rec.onerror = (e) => { if (e.error !== "no-speech" && e.error !== "aborted") err("Microphone: " + e.error); };
-        rec.onend = () => { rec = null; mic.textContent = "● Dictate"; mic.classList.remove("live"); interim.textContent = ""; };
-        rec.start(); mic.textContent = "■ Stop"; mic.classList.add("live"); err("");
+        const before = ta.value; err(""); note.textContent = "";
+        mic.disabled = true;
+        startDictation({
+          onText: (t) => { ta.value = (ta.value.trimEnd() + " " + t).trim(); refresh(); },
+          onDone: (ok) => { mic.disabled = false; if (!ok) ta.value = before; refresh(); if (ok && ta.value.trim()) note.textContent = "Edit if needed, then Run."; (ok ? run : ta).focus(); },
+        });
       });
       run.addEventListener("click", async () => {
-        if (rec) rec.stop();
         const transcript = ta.value.trim(); if (!transcript) return;
         run.disabled = true; run.textContent = "Running…"; out.hidden = false; out.textContent = "Formatting with Claude…"; err("");
         const title = view.querySelector("#title").value.trim();

@@ -93,10 +93,13 @@ the arrow keys move the selection, Shift+arrow moves the cell, `Enter` edits,
   only, 8 MB cap; the UI shrinks photos to 1600px JPEG first) and are served
   from `GET /api/assets/:id`. Bytes live in the database, so they survive
   Render's ephemeral disk. Assets no block references are pruned on save.
-- **AI** is a cell with an input and an output. Press Dictate and talk (the
-  browser's `SpeechRecognition`: Chrome, Edge, iOS Safari; Chrome sends the
-  audio to Google's recognizer; Firefox has none, so you type instead), edit
-  the transcript if needed, press Run. The transcript goes to
+- **AI** is a cell with an input and an output. Press Dictate: a full-screen
+  recording panel opens with a pulsing indicator, a live mic level meter, a
+  timer, the words as they are recognised, and a big Done button (Cancel or
+  Escape discards). Recognition is the browser's `SpeechRecognition` (Chrome,
+  Edge, iOS Safari; Chrome sends the audio to Google's recognizer; Firefox has
+  none, so you type instead) and is restarted automatically when the browser
+  stops it on silence. Edit the transcript if needed, press Run. The transcript goes to
   `POST /api/recipes/draft`, which asks `claude-haiku-5-5` for
   `{title, body, tags}` through structured output. The cell becomes an `ai`
   block holding the formatted text (the output) and the transcript (the
