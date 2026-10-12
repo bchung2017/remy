@@ -83,7 +83,7 @@ class Recipes(unittest.TestCase):
         blocks = [
             {"id": "b1", "type": "text", "text": "Whisk the eggs."},
             {"type": "image", "asset": "abc", "caption": "pan"},
-            {"id": "b3", "type": "ai", "text": "Steps\n1. Fold.", "transcript": "um fold it", "asset": None},
+            {"id": "b3", "type": "ai", "text": "Steps\n1. Fold.", "transcript": "um fold it"},
         ]
         r = self.client.put(f"/api/recipes/{rec['id']}", json={"blocks": blocks})
         self.assertEqual(r.status_code, 200)

@@ -21,9 +21,10 @@ const api = {
   update: (id, b) => api.req("PUT", "/recipes/" + id, b),
   remove: (id) => api.req("DELETE", "/recipes/" + id),
   upload: (id, file) => { const fd = new FormData(); fd.append("file", file, file.name || "image.jpg"); return api.req("POST", `/recipes/${id}/assets`, fd, true); },
-  voice: (id, file) => { const fd = new FormData(); fd.append("file", file, file.name || "memo.webm"); return api.req("POST", `/recipes/${id}/voice`, fd, true); },
+  draft: (b) => api.req("POST", "/recipes/draft", b),
 };
 const health = api.req("GET", "/health").catch(() => ({}));
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;   // browser speech-to-text; Chrome, Edge, iOS Safari
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const when = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "");
@@ -89,14 +90,16 @@ function cellHtml(b, n) {
     </div>`;
   else if (b.type === "ai" && b.draft) body = `
     <div class="cell-in ai-in">
-      <label class="btn btn-sm" for="file-${esc(b.id)}">Choose voice file</label>
-      <input id="file-${esc(b.id)}" class="ai-file" type="file" accept="audio/*,video/mp4,.m4a" hidden>
-      <span class="filename hint">No file yet</span>
-      <button class="btn btn-sm btn-primary run" disabled>▶ Run</button>
+      <div class="ai-row">
+        ${SR ? `<button class="btn btn-sm dictate">● Dictate</button>` : `<span class="hint">No speech recognition in this browser. Type instead.</span>`}
+        <span class="interim hint"></span>
+        <button class="btn btn-sm btn-primary run" disabled>▶ Run</button>
+      </div>
+      <textarea class="transcript" rows="1" placeholder="Say the recipe the way you'd tell a friend. Edit here before running." aria-label="Transcript"></textarea>
     </div>
     <div class="cell-out hint" hidden></div>`;
   else if (b.type === "ai") body = `
-    <div class="cell-in ai-in"><audio controls preload="none" src="/api/assets/${esc(b.asset)}"></audio></div>
+    <div class="cell-in ai-in"><details class="transcript-view"><summary class="hint">Transcript</summary><p>${esc(b.transcript)}</p></details></div>
     <div class="cell-out"><textarea class="text" rows="1" aria-label="Formatted recipe">${esc(b.text)}</textarea></div>`;
   else body = `
     <div class="cell-in"><textarea class="text" rows="1" placeholder="Write here" aria-label="Text">${esc(b.text)}</textarea></div>`;
@@ -138,7 +141,7 @@ async function renderRecipe(id) {
         <button class="btn btn-sm" data-add="text">+ Text</button>
         <label class="btn btn-sm" for="add-image">+ Image</label>
         <input id="add-image" type="file" accept="image/*" hidden>
-        ${h.voice ? `<button class="btn btn-sm" data-add="ai">+ AI</button>` : `<button class="btn btn-sm" disabled title="Set OPENAI_API_KEY and ANTHROPIC_API_KEY to enable">+ AI</button>`}
+        ${h.draft ? `<button class="btn btn-sm" data-add="ai">+ AI</button>` : `<button class="btn btn-sm" disabled title="Set ANTHROPIC_API_KEY to enable">+ AI</button>`}
         <span class="sep"></span>
         <button class="btn btn-sm btn-ghost" id="t-up" title="Move cell up">↑</button>
         <button class="btn btn-sm btn-ghost" id="t-down" title="Move cell down">↓</button>
@@ -162,7 +165,7 @@ async function renderRecipe(id) {
   const readBlocks = () => [...cellsEl.querySelectorAll(".cell:not(.draft)")].map((el) => {
     const id = el.dataset.id, type = el.dataset.type;
     if (type === "image") return { id, type, asset: el.querySelector("img").getAttribute("src").split("/").pop(), caption: el.querySelector(".caption").value };
-    if (type === "ai") return { id, type, text: el.querySelector(".text").value, asset: el.querySelector("audio").getAttribute("src").split("/").pop(), transcript: transcripts[id] || "" };
+    if (type === "ai") return { id, type, text: el.querySelector(".text").value, transcript: transcripts[id] || "" };
     return { id, type, text: el.querySelector(".text").value };
   });
   const renumber = () => {
@@ -212,22 +215,41 @@ async function renderRecipe(id) {
       const act = b.dataset.act;
       if (act === "up") move(el, -1); else if (act === "down") move(el, 1); else remove(el);
     }));
-    const file = el.querySelector(".ai-file");
-    if (file) {
-      const run = el.querySelector(".run"), name = el.querySelector(".filename"), out = el.querySelector(".cell-out");
-      file.addEventListener("change", () => { name.textContent = file.files[0]?.name || "No file yet"; run.disabled = !file.files[0]; });
+    const run = el.querySelector(".run");
+    if (run) {
+      const ta = el.querySelector(".transcript"), out = el.querySelector(".cell-out"), mic = el.querySelector(".dictate"), interim = el.querySelector(".interim");
+      let rec = null;
+      const refresh = () => { run.disabled = !ta.value.trim(); grow(ta); };
+      ta.addEventListener("input", refresh);
+      if (mic) mic.addEventListener("click", () => {
+        if (rec) { rec.stop(); return; }
+        rec = new SR(); rec.continuous = true; rec.interimResults = true; rec.lang = navigator.language || "en-US";
+        rec.onresult = (e) => {
+          let live = "";
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const t = e.results[i][0].transcript;
+            if (e.results[i].isFinal) ta.value = (ta.value.trimEnd() + " " + t.trim()).trim(); else live += t;
+          }
+          interim.textContent = live; refresh();
+        };
+        rec.onerror = (e) => { if (e.error !== "no-speech" && e.error !== "aborted") err("Microphone: " + e.error); };
+        rec.onend = () => { rec = null; mic.textContent = "● Dictate"; mic.classList.remove("live"); interim.textContent = ""; };
+        rec.start(); mic.textContent = "■ Stop"; mic.classList.add("live"); err("");
+      });
       run.addEventListener("click", async () => {
-        const f = file.files[0]; if (!f) return;
-        run.disabled = true; run.textContent = "Running…"; out.hidden = false; out.textContent = "Transcribing, then formatting with Claude…"; err("");
-        await save();   // flush edits; the server appends to the stored page, we then move the cell into place
+        if (rec) rec.stop();
+        const transcript = ta.value.trim(); if (!transcript) return;
+        run.disabled = true; run.textContent = "Running…"; out.hidden = false; out.textContent = "Formatting with Claude…"; err("");
+        const title = view.querySelector("#title").value.trim();
         try {
-          r = await api.voice(id, f);
-          const blk = r.blocks[r.blocks.length - 1];
-          transcripts[blk.id] = blk.transcript || "";
+          const d = await api.draft({ transcript, title: title === "Untitled" ? "" : title });
+          const blk = { id: uid(), type: "ai", text: d.body, transcript };
+          transcripts[blk.id] = transcript;
           el.insertAdjacentHTML("afterend", cellHtml(blk, 0));
           const real = el.nextElementSibling; wire(real); el.remove(); renumber(); select(real);
-          view.querySelector("#title").value = r.title; view.querySelector("#tags").value = r.tags.join(", ");
-          await save();   // persist the cell's position (server appended it at the end)
+          if (!title || title === "Untitled") view.querySelector("#title").value = d.title;
+          if (!view.querySelector("#tags").value.trim()) view.querySelector("#tags").value = d.tags.join(", ");
+          await save();
         } catch (ex) {
           err(ex.message); out.textContent = "Failed: " + ex.message; run.disabled = false; run.textContent = "▶ Run";
         }
@@ -244,7 +266,7 @@ async function renderRecipe(id) {
     else cellsEl.insertAdjacentHTML("beforeend", html);
     const el = selected?.parentElement === cellsEl ? selected.nextElementSibling : cellsEl.lastElementChild;
     wire(el); renumber(); select(el);
-    (el.querySelector("textarea") || el).focus({ preventScroll: true }); el.scrollIntoView({ block: "nearest" });
+    (el.querySelector("textarea.text, textarea.transcript") || el).focus({ preventScroll: true }); el.scrollIntoView({ block: "nearest" });
     return el;
   };
   view.querySelectorAll("[data-add]").forEach((b) => b.addEventListener("click", () => {

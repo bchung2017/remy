@@ -3,9 +3,9 @@
 A small recipe book. Each recipe is a Jupyter-style notebook: a title, tags,
 and numbered cells you insert, move and delete from a toolbar. Three cell
 types: **Text**, **Image** (photo upload, stored in the database), and **AI**
-(input: a voice file; press Run; output: the recipe transcribed and formatted
-into ingredients and steps by Claude, with the audio kept). Browse, search,
-filter by tag, sort, delete.
+(input: dictate with the browser's speech recognition, or type; press Run;
+output: the recipe formatted into ingredients and steps by Claude, with the
+transcript kept). Browse, search, filter by tag, sort, delete.
 
 A **Flask + SQLite** JSON API plus a no-build static frontend, swapping to
 **Postgres/Supabase** via `DATABASE_URL`, isolated in its own schema so it can
@@ -17,7 +17,7 @@ Docker web service.
 - **[Flask](https://flask.palletsprojects.com/)** — JSON API under `/api`, serves `web/` and `brand/tokens.css`
 - **Vanilla HTML/CSS/JS** frontend in `web/` (hash-routed, no bundler), styled from `brand/tokens.css`; notebooks autosave as you type
 - **Installable PWA**: `web/manifest.webmanifest` + `web/sw.js` (network-first shell cache, API never cached)
-- **AI block**: speech-to-text through OpenAI's audio transcription API (`OPENAI_API_KEY`), then formatting through the [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) and `claude-haiku-5-5` (`ANTHROPIC_API_KEY`). Both keys unset ⇒ the AI button is hidden; text and image blocks still work
+- **AI cell**: speech-to-text in the browser (Web Speech API, no key), then formatting through the [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) and `claude-haiku-5-5` (`ANTHROPIC_API_KEY`). Key unset ⇒ `+ AI` is disabled; text and image cells still work
 - **[Flask-SQLAlchemy](https://flask-sqlalchemy.palletsprojects.com/)** over **SQLite** by default
 - **Postgres/Supabase** when `DATABASE_URL` is set, pinned to `DB_SCHEMA`
   (the `stackify-v1` no-collision schema pattern)
@@ -86,28 +86,27 @@ the arrow keys move the selection, Shift+arrow moves the cell, `Enter` edits,
 ```
 {"id", "type": "text",  "text"}
 {"id", "type": "image", "asset", "caption"}
-{"id", "type": "ai",    "text", "transcript", "asset"}
+{"id", "type": "ai",    "text", "transcript"}
 ```
 
 - **Images** upload to `POST /api/recipes/:id/assets` (multipart `file`, image
   only, 8 MB cap; the UI shrinks photos to 1600px JPEG first) and are served
   from `GET /api/assets/:id`. Bytes live in the database, so they survive
   Render's ephemeral disk. Assets no block references are pruned on save.
-- **AI** is a cell with an input and an output. Choose a voice file, press
-  Run: the file goes to `POST /api/recipes/:id/voice`. Claude has no
-  audio input, so the server transcribes it first (OpenAI audio transcription,
-  `STT_MODEL` default `whisper-1`), then asks `claude-haiku-5-5` for
-  `{title, body, tags}` through structured output and appends an `ai` block
-  holding the formatted text (the output), the raw transcript and the audio
-  (the input). The UI then moves it into the cell's position. An untitled
-  page takes the drafted title; empty tags take the drafted tags. Needs both
-  `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`; otherwise 503 and `/api/health`
-  reports `voice: false`. Transcripts are capped at 8000 characters and output
-  at 2000 tokens.
-- `POST /api/recipes/draft` (`{transcript, title?}` → `{title, body, tags}`)
-  is the text-only version of the same formatting step.
+- **AI** is a cell with an input and an output. Press Dictate and talk (the
+  browser's `SpeechRecognition`: Chrome, Edge, iOS Safari; Chrome sends the
+  audio to Google's recognizer; Firefox has none, so you type instead), edit
+  the transcript if needed, press Run. The transcript goes to
+  `POST /api/recipes/draft`, which asks `claude-haiku-5-5` for
+  `{title, body, tags}` through structured output. The cell becomes an `ai`
+  block holding the formatted text (the output) and the transcript (the
+  input, shown collapsed). An untitled page takes the drafted title; empty
+  tags take the drafted tags. Needs `ANTHROPIC_API_KEY`; otherwise the
+  endpoint returns 503, `/api/health` reports `draft: false` and `+ AI` is
+  disabled. Transcripts are capped at 8000 characters and output at 2000
+  tokens, well under a tenth of a cent per run.
 
-The app has no auth: anyone who can reach the URL can spend your keys. Fine
+The app has no auth: anyone who can reach the URL can spend your key. Fine
 for a personal deploy; add a secret header or a rate limit before sharing the
 link widely.
 
@@ -162,8 +161,7 @@ deduped. Writes take `blocks`; a legacy `body` string becomes one text block.
 | `DELETE` | `/recipes/:id`  | delete                                                           |
 | `GET`    | `/tags`         | `[{tag, count}]` across all recipes                              |
 | `POST`   | `/recipes/:id/assets` | multipart image upload → `{id, contentType, size, url}`     |
-| `GET`    | `/assets/:id`   | the stored image or audio bytes                                  |
-| `POST`   | `/recipes/:id/voice` | multipart audio → transcribe, draft, append an `ai` block; returns the recipe |
+| `GET`    | `/assets/:id`   | the stored image bytes                                           |
 | `POST`   | `/recipes/draft` | `{transcript, title?}` → `{title, body, tags}` via Claude; 503 when off |
 
 ## Layout
@@ -189,10 +187,9 @@ backend/
   remy_api/
     __init__.py         create_app factory, db init, schema creation
     config.py           backend selection + no-collision schema isolation
-    models.py           Recipe (blocks JSON + derived body), Asset (image/audio bytes)
+    models.py           Recipe (blocks JSON + derived body), Asset (image bytes)
     routes.py           /api blueprint
     llm.py              transcript -> draft via claude-haiku-5-5 (structured output)
-    stt.py              audio -> transcript via OpenAI audio transcription
     seed.py             one-time seed when the table is empty
   scripts/
     migrate_sqlite_to_pg.py   one-shot SQLite → Postgres copier (guarded)
@@ -200,5 +197,5 @@ backend/
     test_config.py      backend-selection + schema-isolation unit tests
     test_routes.py      recipe CRUD/search tests on throwaway SQLite
     test_draft.py       draft endpoint with the model call mocked
-    test_assets.py      image upload/serve/prune, voice endpoint, STT client (mocked)
+    test_assets.py      image upload/serve/prune
 ```

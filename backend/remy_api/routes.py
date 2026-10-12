@@ -3,7 +3,7 @@ import anthropic
 from flask import Blueprint, Response, current_app, jsonify, request
 from sqlalchemy import or_
 
-from . import db, llm, stt
+from . import db, llm
 from .models import Asset, Recipe, new_id, normalize_blocks
 
 api = Blueprint("api", __name__, url_prefix="/api")
@@ -58,7 +58,6 @@ def health():
         "backend": current_app.config.get("REMY_BACKEND"),
         "schema": current_app.config.get("REMY_DB_SCHEMA"),
         "draft": llm.enabled(),
-        "voice": llm.enabled() and stt.enabled(),
     }
 
 
@@ -176,58 +175,13 @@ def get_asset(asset_id: str):
                     headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
-# --- AI block: voice file -> transcript -> Haiku draft -> block ---------------
-
-@api.post("/recipes/<int:recipe_id>/voice")
-def voice_block(recipe_id: int):
-    """Transcribe an audio file, format it with Claude, append an `ai` block.
-    Fills in the title and tags if the recipe has none yet. Returns the recipe."""
-    if not (llm.enabled() and stt.enabled()):
-        return jsonify({"error": "voice is off: set ANTHROPIC_API_KEY and OPENAI_API_KEY"}), 503
-    recipe = db.session.get(Recipe, recipe_id)
-    if recipe is None:
-        return jsonify({"error": "not found"}), 404
-    up, errresp = _read_upload(("audio/", "video/"))   # phones label voice memos as video/mp4 at times
-    if errresp:
-        return errresp
-    data, ctype, filename = up
-
-    try:
-        transcript = stt.transcribe(data, ctype, filename)
-    except stt.SttError as e:
-        return jsonify({"error": str(e)}), e.status
-
-    title_hint = "" if recipe.title == UNTITLED else recipe.title
-    try:
-        draft = llm.draft_recipe(transcript, title_hint)
-    except anthropic.RateLimitError:
-        return jsonify({"error": "rate limited, try again in a minute"}), 429
-    except anthropic.APIConnectionError:
-        return jsonify({"error": "could not reach the model"}), 502
-    except anthropic.APIStatusError as e:
-        return jsonify({"error": f"model error ({e.status_code})"}), 502
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 422
-
-    asset = Asset(id=new_id(), recipe_id=recipe.id, content_type=ctype, size=len(data), data=data)
-    db.session.add(asset)
-    blocks = recipe.block_list()
-    blocks.append({"id": new_id(), "type": "ai", "text": draft.body.strip(),
-                   "transcript": transcript, "asset": asset.id})
-    recipe.set_blocks(blocks)
-    if recipe.title == UNTITLED and draft.title.strip():
-        recipe.title = draft.title.strip()[:200]
-    if not recipe.tags:
-        recipe.tags = Recipe.pack_tags(draft.tags)[:400]
-    db.session.commit()
-    return jsonify(recipe.to_dict()), 201
-
-
-# --- draft from text (no audio) -----------------------------------------------
+# --- AI cell: dictated transcript -> Haiku draft ------------------------------
+# Speech-to-text happens in the browser (Web Speech API); only text reaches here.
 
 @api.post("/recipes/draft")
 def draft_recipe():
-    """Tidy a dictated/raw transcript into {title, body, tags} without saving it."""
+    """Format a dictated/typed transcript into {title, body, tags}. Nothing is
+    saved; the client writes the result into an `ai` block and PUTs the page."""
     if not llm.enabled():
         return jsonify({"error": "drafting is off: ANTHROPIC_API_KEY is not set"}), 503
     data = request.get_json(silent=True) or {}

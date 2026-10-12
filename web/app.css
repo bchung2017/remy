@@ -112,9 +112,12 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--copper); ou
 .cell-image img { display: block; max-width: 100%; max-height: 70vh; border-radius: var(--radius-sm); border: 1px solid var(--hairline); }
 .caption { margin-top: var(--space-1); padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ink-muted); font: 500 14px/20px var(--font-body); }
 .caption:focus { outline: none; box-shadow: 0 1px 0 var(--copper); }
-.ai-in { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.ai-in audio { height: 32px; max-width: 100%; }
-.filename { flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-in { display: grid; gap: var(--space-2); }
+.ai-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.ai-row .interim { flex: 1 1 120px; min-width: 0; font-style: italic; }
+.dictate.live { color: var(--tomato); border-color: var(--tomato); }
+.transcript-view summary { cursor: pointer; }
+.transcript-view p { margin: var(--space-1) 0 0; color: var(--ink-muted); font-size: 15px; line-height: 22px; white-space: pre-wrap; }
 .hint { color: var(--ink-muted); font-size: 14px; line-height: 20px; }
 
 .cell-tools { position: absolute; top: var(--space-1); right: var(--space-1); display: flex; gap: 2px; opacity: 0; pointer-events: none; transition: opacity 160ms ease-out; }

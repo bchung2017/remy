@@ -5,7 +5,7 @@ A recipe is a notebook page: an ordered list of blocks stored as JSON.
 Block shapes (all carry a client-or-server-assigned `id`):
   {"id", "type": "text",  "text": str}
   {"id", "type": "image", "asset": str, "caption": str}
-  {"id", "type": "ai",    "text": str, "transcript": str, "asset": str | None}
+  {"id", "type": "ai",    "text": str, "transcript": str}   (output, and the dictated input)
 `body` is derived from the text of text/ai blocks so search and list previews
 stay cheap; it is never written directly once blocks exist.
 """
@@ -49,12 +49,11 @@ def normalize_blocks(raw) -> list[dict]:
         if b["type"] == "ai":
             tr = b.get("transcript", "")
             blk["transcript"] = tr[:MAX_BLOCK_TEXT] if isinstance(tr, str) else ""
-        if b["type"] in ("image", "ai"):
-            asset = b.get("asset")
-            if b["type"] == "image" and not (isinstance(asset, str) and asset):
-                raise ValueError("image blocks need an asset")
-            blk["asset"] = asset if isinstance(asset, str) and len(asset) <= 40 else None
         if b["type"] == "image":
+            asset = b.get("asset")
+            if not (isinstance(asset, str) and asset and len(asset) <= 40):
+                raise ValueError("image blocks need an asset")
+            blk["asset"] = asset
             cap = b.get("caption", "")
             blk["caption"] = cap[:400] if isinstance(cap, str) else ""
         out.append(blk)
@@ -121,8 +120,8 @@ class Recipe(db.Model):
 
 
 class Asset(db.Model):
-    """An uploaded image or audio file, stored in the database so it survives
-    Render's ephemeral disk. Small personal-scale; cap uploads in the route."""
+    """An uploaded image, stored in the database so it survives Render's
+    ephemeral disk. Small personal-scale; cap uploads in the route."""
     __tablename__ = "assets"
 
     id = db.Column(db.String(32), primary_key=True, default=new_id)
