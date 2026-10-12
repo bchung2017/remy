@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>remy whisper test</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+Sans:wght@400;700&family=Courier+Prime&display=swap">
+  <link rel="stylesheet" href="/tokens.css">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: var(--space-4); background: var(--surface); color: var(--ink); font: 400 17px/26px var(--font-body); }
+    main { max-width: 720px; margin: 0 auto; display: grid; gap: var(--space-4); }
+    h1 { margin: 0; font: 700 24px/30px var(--font-body); color: var(--aubergine); }
+    .row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+    .btn { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--hairline); background: var(--surface-raised); color: var(--ink); font: 700 17px/26px var(--font-body); cursor: pointer; }
+    .btn-primary { background: var(--copper); border-color: var(--copper); color: var(--on-copper); }
+    .btn:disabled { opacity: .5; cursor: default; }
+    select { padding: var(--space-2) var(--space-3); border: 1px solid var(--hairline); border-radius: var(--radius-sm); background: var(--surface-sunken); color: var(--ink); font: inherit; }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3); margin: 0; font: 400 15px/22px var(--font-ticket); }
+    dt { color: var(--ink-muted); }
+    #bars { display: grid; gap: var(--space-1); }
+    .bar { display: grid; grid-template-columns: 1fr auto; gap: var(--space-2); font: 400 14px/20px var(--font-ticket); }
+    .bar i { display: block; height: 6px; grid-column: 1 / -1; background: var(--surface-sunken); border-radius: var(--radius-pill); overflow: hidden; }
+    .bar i b { display: block; height: 100%; width: 0; background: var(--copper); }
+    #log { margin: 0; padding: var(--space-3); max-height: 40vh; overflow: auto; background: var(--surface-sunken); border-radius: var(--radius-sm); font: 400 13px/19px var(--font-ticket); white-space: pre-wrap; overflow-wrap: anywhere; }
+    #out { padding: var(--space-3); border-left: 3px solid var(--lamp); background: var(--surface-raised); min-height: 3em; white-space: pre-wrap; }
+    .ok { color: var(--zucchini); } .bad { color: var(--tomato); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Whisper in the browser: download test</h1>
+  <p>Standalone page, nothing in the app uses it. Press <b>Load model</b>: the first run downloads the files from Hugging Face and stores them in this browser's Cache Storage; later runs should read from cache in a second or two. Then <b>Record 5 s</b> to transcribe on this device. Sizes are for whisper-base.en; tiny.en is roughly half.</p>
+
+  <div class="row">
+    <select id="model" aria-label="Model">
+      <option value="onnx-community/whisper-base.en">onnx-community/whisper-base.en</option>
+      <option value="Xenova/whisper-base.en">Xenova/whisper-base.en</option>
+      <option value="onnx-community/whisper-tiny.en">onnx-community/whisper-tiny.en (smaller, faster)</option>
+    </select>
+    <select id="device" aria-label="Device">
+      <option value="auto">auto (WebGPU if available, else WASM)</option>
+      <option value="webgpu">webgpu</option>
+      <option value="wasm">wasm</option>
+    </select>
+    <select id="dtype" aria-label="Precision">
+      <option value="q8">q8, about 77 MB (base.en)</option>
+      <option value="fp16">fp16, about 146 MB</option>
+      <option value="fp32">fp32, about 290 MB</option>
+    </select>
+    <button class="btn btn-primary" id="load">Load model</button>
+    <button class="btn" id="rec" disabled>Record 5 s and transcribe</button>
+  </div>
+  <div class="row">
+    <button class="btn" id="check">Check cache</button>
+    <button class="btn" id="persist">Ask for persistent storage</button>
+    <button class="btn" id="clear">Clear model cache</button>
+  </div>
+
+  <dl>
+    <dt>browser</dt><dd id="ua"></dd>
+    <dt>WebGPU</dt><dd id="gpu"></dd>
+    <dt>storage</dt><dd id="storage"></dd>
+    <dt>model load</dt><dd id="loadtime">not loaded</dd>
+    <dt>transcribe</dt><dd id="ttime"></dd>
+  </dl>
+  <div id="bars"></div>
+  <div id="out" hidden></div>
+  <pre id="log"></pre>
+</main>
+
+<script type="module">
+  import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js";
+  env.allowLocalModels = false;      // always fetch from the Hub, never look for /models on this origin
+  env.useBrowserCache = true;        // default; the point of this test
+
+  const $ = (id) => document.getElementById(id);
+  const log = (m, cls = "") => { const t = new Date().toISOString().slice(11, 19); $("log").insertAdjacentHTML("beforeend", `<span class="${cls}">[${t}] ${m}</span>\n`); $("log").scrollTop = 1e9; };
+  const fmt = (b) => b > 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.round(b / 1e3) + " kB";
+
+  $("ua").textContent = navigator.userAgent;
+  $("gpu").innerHTML = "gpu" in navigator ? `<span class="ok">available</span>` : `<span class="bad">not available (WASM fallback)</span>`;
+  async function storageInfo() {
+    try { const e = await navigator.storage.estimate(); const p = await navigator.storage.persisted?.(); $("storage").textContent = `${fmt(e.usage)} used of ${fmt(e.quota)} quota, persistent: ${p}`; }
+    catch (err) { $("storage").textContent = "estimate unavailable: " + err.message; }
+  }
+  storageInfo();
+
+  let asr = null;
+  const bars = {};
+  function progress(p) {
+    if (p.status === "initiate") { bars[p.file] = document.createElement("div"); bars[p.file].className = "bar"; bars[p.file].innerHTML = `<span>${p.file}</span><span class="pct">0%</span><i><b></b></i>`; $("bars").appendChild(bars[p.file]); log("fetch " + p.file); }
+    else if (p.status === "progress" && bars[p.file]) { const pct = p.total ? Math.round(p.loaded / p.total * 100) : 0; bars[p.file].querySelector(".pct").textContent = `${pct}%  ${fmt(p.loaded)} / ${fmt(p.total || 0)}`; bars[p.file].querySelector("b").style.width = pct + "%"; }
+    else if (p.status === "done" && bars[p.file]) { bars[p.file].querySelector(".pct").textContent = "done"; bars[p.file].querySelector("b").style.width = "100%"; }
+    else if (p.status === "ready") log("pipeline ready", "ok");
+  }
+
+  $("load").addEventListener("click", async () => {
+    $("load").disabled = true; $("bars").innerHTML = ""; asr = null;
+    const model = $("model").value;
+    let device = $("device").value; if (device === "auto") device = "gpu" in navigator ? "webgpu" : "wasm";
+    const dtype = $("dtype").value;
+    log(`loading ${model} on ${device} (dtype ${dtype})`);
+    const t0 = performance.now();
+    try {
+      asr = await pipeline("automatic-speech-recognition", model, { device, dtype, progress_callback: progress });
+      const ms = Math.round(performance.now() - t0);
+      $("loadtime").textContent = `${model} on ${device} in ${(ms / 1000).toFixed(1)} s`;
+      log(`loaded in ${ms} ms. Reload the page and press Load again: a cached load should take well under a second plus model init.`, "ok");
+      $("rec").disabled = false;
+    } catch (err) {
+      log("load failed: " + (err?.message || err), "bad");
+      if (device === "webgpu") log("tip: pick wasm in the device menu and retry; if q8 fails on webgpu, try fp16");
+    }
+    $("load").disabled = false; storageInfo();
+  });
+
+  $("rec").addEventListener("click", async () => {
+    $("rec").disabled = true; $("out").hidden = true;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream); const chunks = [];
+      mr.ondataavailable = (e) => chunks.push(e.data);
+      const stopped = new Promise((res) => { mr.onstop = res; });
+      mr.start(); log("recording 5 s, talk now");
+      for (let i = 5; i > 0; i--) { $("rec").textContent = `Recording… ${i}`; await new Promise((r) => setTimeout(r, 1000)); }
+      mr.stop(); await stopped; stream.getTracks().forEach((t) => t.stop());
+      const blob = new Blob(chunks, { type: mr.mimeType }); log(`captured ${fmt(blob.size)} ${mr.mimeType}`);
+      // decode to 16 kHz mono float32, which is what Whisper expects
+      const ac = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      const buf = await ac.decodeAudioData(await blob.arrayBuffer());
+      const audio = buf.numberOfChannels > 1 ? (() => { const a = buf.getChannelData(0), b = buf.getChannelData(1), m = new Float32Array(a.length); for (let i = 0; i < a.length; i++) m[i] = (a[i] + b[i]) / 2; return m; })() : buf.getChannelData(0);
+      await ac.close();
+      log(`decoded ${(buf.duration).toFixed(1)} s at ${buf.sampleRate} Hz, transcribing`);
+      const t0 = performance.now();
+      const r = await asr(audio, { chunk_length_s: 30, return_timestamps: false });
+      const ms = Math.round(performance.now() - t0);
+      $("ttime").textContent = `${(ms / 1000).toFixed(1)} s for ${buf.duration.toFixed(1)} s of audio`;
+      $("out").textContent = r.text || "(nothing recognised)"; $("out").hidden = false;
+      log(`transcribed in ${ms} ms`, "ok");
+    } catch (err) { log("record/transcribe failed: " + (err?.message || err), "bad"); }
+    $("rec").textContent = "Record 5 s and transcribe"; $("rec").disabled = false;
+  });
+
+  $("check").addEventListener("click", async () => {
+    const names = await caches.keys(); log("cache stores: " + (names.join(", ") || "none"));
+    for (const n of names) { const c = await caches.open(n); const keys = await c.keys(); const hf = keys.filter((k) => /huggingface|hf\.co/.test(k.url)); if (hf.length) { let bytes = 0; for (const k of hf) { const r = await c.match(k); const b = await r.blob(); bytes += b.size; } log(`${n}: ${hf.length} model files, ${fmt(bytes)}`); } }
+    storageInfo();
+  });
+  $("persist").addEventListener("click", async () => { const ok = await navigator.storage.persist?.(); log("persistent storage: " + ok, ok ? "ok" : "bad"); storageInfo(); });
+  $("clear").addEventListener("click", async () => { let n = 0; for (const name of await caches.keys()) { const c = await caches.open(name); for (const k of await c.keys()) if (/huggingface|hf\.co/.test(k.url)) { await c.delete(k); n++; } } log(`removed ${n} cached model files`); $("rec").disabled = true; asr = null; $("loadtime").textContent = "not loaded"; storageInfo(); });
+</script>
+</body>
+</html>

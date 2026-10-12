@@ -182,6 +182,7 @@ web/
   manifest.webmanifest  PWA manifest (standalone, start_url /)
   sw.js                 service worker: caches the shell, passes /api through
   icons/                icon.svg source + 192/512 PNG + apple-touch-icon
+  whisper-test.html     standalone test: download whisper-base.en via transformers.js, cache it, transcribe 5 s
 backend/
   wsgi.py               dev entry / WSGI app (wsgi:app)
   requirements.txt
