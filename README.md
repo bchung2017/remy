@@ -111,10 +111,11 @@ The app has no auth: anyone who can reach the URL can spend your keys. Fine
 for a personal deploy; add a secret header or a rate limit before sharing the
 link widely.
 
-Schema note: `blocks` and the `assets` table were added after the first
-version. `create_all()` does not alter existing tables, so a database created
-before this change needs `python reset_db.py --yes` (or one boot with
-`REMY_DB_RESET=1`) to pick them up.
+Schema note: `create_all()` only creates missing tables. Columns added after
+the first release are listed in `ADDED_COLUMNS` in `remy_api/__init__.py` and
+added in place at boot when absent, so an older database upgrades itself
+without a reset. `reset_db.py --yes` / `REMY_DB_RESET=1` remain for a
+destructive rebuild.
 
 Additional env vars: `DATABASE_SSL=disable` (local plaintext Postgres only),
 `PGPOOL_MAX` (max pool connections, default 3), `REMY_DB_RESET=1` (drop +

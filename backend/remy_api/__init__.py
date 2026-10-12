@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from flask import Flask, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 from .config import resolve_config
 
@@ -70,6 +70,7 @@ def create_app() -> Flask:
             db.drop_all()
 
         db.create_all()
+        _add_missing_columns()
         from .seed import seed_if_empty
         seed_if_empty()
 
@@ -84,3 +85,25 @@ def create_app() -> Flask:
         return send_from_directory(BRAND_DIR, "tokens.css")
 
     return app
+
+
+# Columns added after the first release. create_all() only creates missing
+# *tables*, so an existing database keeps its old shape and the first query
+# fails with UndefinedColumn. These are additive and safe to re-run: each is
+# applied only when the inspector says the column is absent. Rows written
+# before the column existed get the default; Recipe.block_list() already
+# treats an empty `blocks` with a non-empty `body` as one legacy text block.
+ADDED_COLUMNS = [
+    ("recipes", "blocks", "TEXT NOT NULL DEFAULT '[]'"),
+]
+
+
+def _add_missing_columns() -> None:
+    insp = inspect(db.engine)
+    for table, column, ddl in ADDED_COLUMNS:
+        if table not in insp.get_table_names():
+            continue
+        if column in {c["name"] for c in insp.get_columns(table)}:
+            continue
+        db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+        db.session.commit()
