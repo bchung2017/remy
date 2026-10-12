@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>remy whisper test</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+Sans:wght@400;700&family=Courier+Prime&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+Sans:wght@400;700&family=Courier+Prime&display=swap" crossorigin="anonymous">
   <link rel="stylesheet" href="/tokens.css">
   <style>
     * { box-sizing: border-box; }
@@ -30,7 +30,7 @@
 <body>
 <main>
   <h1>Whisper in the browser: download test</h1>
-  <p>Standalone page, nothing in the app uses it. Press <b>Load model</b>: the first run downloads the files from Hugging Face and stores them in this browser's Cache Storage; later runs should read from cache in a second or two. Then <b>Record 5 s</b> to transcribe on this device. Sizes are for whisper-base.en; tiny.en is roughly half.</p>
+  <p>Standalone page, nothing in the app uses it. Press <b>Load model</b>: the first run downloads the files from Hugging Face and stores them in this browser's Cache Storage; later runs read from cache. Then <b>Record 5 s</b> to transcribe on this device. The model runs in a Web Worker, so the page stays live and the timer below ticks while it works. Sizes are for whisper-base.en; tiny.en is roughly half.</p>
 
   <div class="row">
     <select id="model" aria-label="Model">
@@ -60,6 +60,7 @@
   <dl>
     <dt>browser</dt><dd id="ua"></dd>
     <dt>WebGPU</dt><dd id="gpu"></dd>
+    <dt>threads</dt><dd id="threads"></dd>
     <dt>storage</dt><dd id="storage"></dd>
     <dt>model load</dt><dd id="loadtime">not loaded</dd>
     <dt>transcribe</dt><dd id="ttime"></dd>
@@ -70,85 +71,127 @@
 </main>
 
 <script type="module">
-  import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js";
-  env.allowLocalModels = false;      // always fetch from the Hub, never look for /models on this origin
-  env.useBrowserCache = true;        // default; the point of this test
+  // Everything model-related runs in a Worker so a slow phone never freezes the page.
+  const CDN = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js";
+  const workerSrc = `
+    import { pipeline, env } from "${CDN}";
+    env.allowLocalModels = false;      // always fetch from the Hub, never look for /models on this origin
+    env.useBrowserCache = true;        // default; the point of this test
+    let asr = null;
+    self.onmessage = async (e) => {
+      const m = e.data;
+      try {
+        if (m.type === "load") {
+          asr = await pipeline("automatic-speech-recognition", m.model, { device: m.device, dtype: m.dtype, progress_callback: (p) => postMessage({ type: "progress", p }) });
+          postMessage({ type: "loaded", threads: env.backends?.onnx?.wasm?.numThreads ?? null });
+        } else if (m.type === "transcribe") {
+          const t0 = performance.now();
+          const r = await asr(m.audio, { chunk_length_s: 30, return_timestamps: false });
+          postMessage({ type: "result", text: r.text, ms: Math.round(performance.now() - t0) });
+        }
+      } catch (err) { postMessage({ type: "error", message: String(err?.message || err), stack: String(err?.stack || "") }); }
+    };`;
+  let worker = null;
+  function newWorker() {
+    worker?.terminate();
+    worker = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: "text/javascript" })), { type: "module" });
+    worker.onmessage = (e) => handlers[e.data.type]?.(e.data);
+    worker.onerror = (e) => log("worker error: " + e.message, "bad");
+  }
+  const handlers = {};
 
   const $ = (id) => document.getElementById(id);
   const log = (m, cls = "") => { const t = new Date().toISOString().slice(11, 19); $("log").insertAdjacentHTML("beforeend", `<span class="${cls}">[${t}] ${m}</span>\n`); $("log").scrollTop = 1e9; };
   const fmt = (b) => b > 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.round(b / 1e3) + " kB";
 
   $("ua").textContent = navigator.userAgent;
+  $("threads").textContent = `crossOriginIsolated: ${self.crossOriginIsolated} (WASM threads ${self.crossOriginIsolated ? "on" : "off, single thread"}), cores: ${navigator.hardwareConcurrency}`;
   // navigator.gpu can exist with no usable adapter (Android Chrome on many phones), so probe for one.
   let gpuOk = false;
-  (async () => {
-    try { gpuOk = !!(navigator.gpu && await navigator.gpu.requestAdapter()); } catch { gpuOk = false; }
-    $("gpu").innerHTML = gpuOk ? `<span class="ok">adapter available</span>` : `<span class="bad">no adapter (${"gpu" in navigator ? "API present but requestAdapter() returned null" : "API absent"}), using WASM</span>`;
-  })();
+  async function probeGpu() { try { gpuOk = !!(navigator.gpu && await navigator.gpu.requestAdapter()); } catch { gpuOk = false; } return gpuOk; }
+  probeGpu().then(() => { $("gpu").innerHTML = gpuOk ? `<span class="ok">adapter available</span>` : `<span class="bad">no adapter (${"gpu" in navigator ? "API present but requestAdapter() returned null" : "API absent"}), using WASM</span>`; });
   async function storageInfo() {
     try { const e = await navigator.storage.estimate(); const p = await navigator.storage.persisted?.(); $("storage").textContent = `${fmt(e.usage)} used of ${fmt(e.quota)} quota, persistent: ${p}`; }
     catch (err) { $("storage").textContent = "estimate unavailable: " + err.message; }
   }
   storageInfo();
 
-  let asr = null;
   const bars = {};
-  function progress(p) {
+  handlers.progress = ({ p }) => {
     if (p.status === "initiate") { bars[p.file] = document.createElement("div"); bars[p.file].className = "bar"; bars[p.file].innerHTML = `<span>${p.file}</span><span class="pct">0%</span><i><b></b></i>`; $("bars").appendChild(bars[p.file]); log("fetch " + p.file); }
     else if (p.status === "progress" && bars[p.file]) { const pct = p.total ? Math.round(p.loaded / p.total * 100) : 0; bars[p.file].querySelector(".pct").textContent = `${pct}%  ${fmt(p.loaded)} / ${fmt(p.total || 0)}`; bars[p.file].querySelector("b").style.width = pct + "%"; }
     else if (p.status === "done" && bars[p.file]) { bars[p.file].querySelector(".pct").textContent = "done"; bars[p.file].querySelector("b").style.width = "100%"; }
     else if (p.status === "ready") log("pipeline ready", "ok");
-  }
+  };
 
-  async function load(model, device, dtype) {
-    $("bars").innerHTML = "";
-    log(`loading ${model} on ${device} (dtype ${dtype})`);
-    const t0 = performance.now();
-    asr = await pipeline("automatic-speech-recognition", model, { device, dtype, progress_callback: progress });
-    const ms = Math.round(performance.now() - t0);
-    $("loadtime").textContent = `${model} on ${device} (${dtype}) in ${(ms / 1000).toFixed(1)} s`;
-    log(`loaded in ${ms} ms. Reload the page and press Load again to time a cached load.`, "ok");
-    $("rec").disabled = false;
+  // elapsed ticker shown while the worker is busy, so a slow phone is visibly working, not hung
+  let tick = null;
+  const busy = (el, label) => { const t0 = Date.now(); clearInterval(tick); tick = setInterval(() => { el.textContent = `${label} ${Math.round((Date.now() - t0) / 1000)} s`; }, 250); };
+  const idle = () => clearInterval(tick);
+
+  function load(model, device, dtype) {
+    return new Promise((resolve, reject) => {
+      newWorker(); $("bars").innerHTML = "";
+      log(`loading ${model} on ${device} (dtype ${dtype})`);
+      const t0 = performance.now(); busy($("loadtime"), "loading…");
+      handlers.loaded = ({ threads }) => { idle(); const ms = Math.round(performance.now() - t0); $("loadtime").textContent = `${model} on ${device} (${dtype}) in ${(ms / 1000).toFixed(1)} s, wasm threads: ${threads}`; log(`loaded in ${ms} ms. Reload the page and press Load again to time a cached load.`, "ok"); $("rec").disabled = false; resolve(); };
+      handlers.error = ({ message, stack }) => { idle(); log("worker: " + message, "bad"); if (stack) log(stack.split("\n").slice(0, 3).join(" | ")); reject(new Error(message)); };
+      worker.postMessage({ type: "load", model, device, dtype });
+    });
   }
   $("load").addEventListener("click", async () => {
-    $("load").disabled = true; asr = null;
+    $("load").disabled = true; $("rec").disabled = true;
     const model = $("model").value, dtype = $("dtype").value;
     let device = $("device").value;
-    if (device === "auto") { try { gpuOk = !!(navigator.gpu && await navigator.gpu.requestAdapter()); } catch { gpuOk = false; } device = gpuOk ? "webgpu" : "wasm"; }
+    if (device === "auto") device = (await probeGpu()) ? "webgpu" : "wasm";
     try { await load(model, device, dtype); }
     catch (err) {
-      log("load failed: " + (err?.message || err), "bad");
-      if (device === "webgpu") {
-        log("retrying on wasm");
-        try { await load(model, "wasm", dtype); } catch (e2) { log("wasm load failed too: " + (e2?.message || e2), "bad"); }
-      }
+      if (device === "webgpu") { log("retrying on wasm"); try { await load(model, "wasm", dtype); } catch {} }
     }
     $("load").disabled = false; storageInfo();
   });
 
+  // Record raw PCM straight from the mic (no MediaRecorder, no decodeAudioData: both have stalled on
+  // phones), then resample to the 16 kHz mono Whisper expects.
+  async function recordPcm(seconds, onTick) {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    await ac.resume().catch(() => {});
+    const src = ac.createMediaStreamSource(stream);
+    const proc = ac.createScriptProcessor(4096, 1, 1);
+    const chunks = [];
+    proc.onaudioprocess = (e) => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    src.connect(proc); proc.connect(ac.destination);   // destination keeps the processor alive; it outputs silence
+    for (let i = seconds; i > 0; i--) { onTick(i); await new Promise((r) => setTimeout(r, 1000)); }
+    proc.disconnect(); src.disconnect(); stream.getTracks().forEach((t) => t.stop()); await ac.close();
+    const n = chunks.reduce((a, c) => a + c.length, 0), pcm = new Float32Array(n);
+    let o = 0; for (const c of chunks) { pcm.set(c, o); o += c.length; }
+    return { pcm, rate: ac.sampleRate };
+  }
+  function resample(pcm, from, to) {
+    if (from === to) return pcm;
+    const ratio = from / to, out = new Float32Array(Math.floor(pcm.length / ratio));
+    for (let i = 0; i < out.length; i++) { const x = i * ratio, j = Math.floor(x), f = x - j; out[i] = pcm[j] * (1 - f) + (pcm[Math.min(j + 1, pcm.length - 1)] || 0) * f; }
+    return out;
+  }
+
   $("rec").addEventListener("click", async () => {
     $("rec").disabled = true; $("out").hidden = true;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream); const chunks = [];
-      mr.ondataavailable = (e) => chunks.push(e.data);
-      const stopped = new Promise((res) => { mr.onstop = res; });
-      mr.start(); log("recording 5 s, talk now");
-      for (let i = 5; i > 0; i--) { $("rec").textContent = `Recording… ${i}`; await new Promise((r) => setTimeout(r, 1000)); }
-      mr.stop(); await stopped; stream.getTracks().forEach((t) => t.stop());
-      const blob = new Blob(chunks, { type: mr.mimeType }); log(`captured ${fmt(blob.size)} ${mr.mimeType}`);
-      // decode to 16 kHz mono float32, which is what Whisper expects
-      const ac = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-      const buf = await ac.decodeAudioData(await blob.arrayBuffer());
-      const audio = buf.numberOfChannels > 1 ? (() => { const a = buf.getChannelData(0), b = buf.getChannelData(1), m = new Float32Array(a.length); for (let i = 0; i < a.length; i++) m[i] = (a[i] + b[i]) / 2; return m; })() : buf.getChannelData(0);
-      await ac.close();
-      log(`decoded ${(buf.duration).toFixed(1)} s at ${buf.sampleRate} Hz, transcribing`);
+      log("recording 5 s, talk now");
+      const { pcm, rate } = await recordPcm(5, (i) => { $("rec").textContent = `Recording… ${i}`; });
+      const audio = resample(pcm, rate, 16000);
+      let peak = 0; for (const v of audio) peak = Math.max(peak, Math.abs(v));
+      log(`captured ${(pcm.length / rate).toFixed(1)} s at ${rate} Hz, peak level ${peak.toFixed(3)}${peak < 0.01 ? " (very quiet: is the mic muted?)" : ""}`);
+      $("rec").textContent = "Transcribing…"; busy($("ttime"), "transcribing…");
+      const secs = (audio.length / 16000).toFixed(1);   // measure before the buffer is transferred to the worker
       const t0 = performance.now();
-      const r = await asr(audio, { chunk_length_s: 30, return_timestamps: false });
-      const ms = Math.round(performance.now() - t0);
-      $("ttime").textContent = `${(ms / 1000).toFixed(1)} s for ${buf.duration.toFixed(1)} s of audio`;
-      $("out").textContent = r.text || "(nothing recognised)"; $("out").hidden = false;
-      log(`transcribed in ${ms} ms`, "ok");
+      await new Promise((resolve, reject) => {
+        handlers.result = ({ text, ms }) => { idle(); $("ttime").textContent = `${(ms / 1000).toFixed(1)} s for ${secs} s of audio`; $("out").textContent = text || "(nothing recognised)"; $("out").hidden = false; log(`transcribed in ${ms} ms`, "ok"); resolve(); };
+        handlers.error = ({ message }) => { idle(); $("ttime").textContent = "failed"; reject(new Error(message)); };
+        worker.postMessage({ type: "transcribe", audio }, [audio.buffer]);
+      });
+      log(`round trip ${Math.round(performance.now() - t0)} ms`);
     } catch (err) { log("record/transcribe failed: " + (err?.message || err), "bad"); }
     $("rec").textContent = "Record 5 s and transcribe"; $("rec").disabled = false;
   });
@@ -159,7 +202,7 @@
     storageInfo();
   });
   $("persist").addEventListener("click", async () => { const ok = await navigator.storage.persist?.(); log("persistent storage: " + ok, ok ? "ok" : "bad"); storageInfo(); });
-  $("clear").addEventListener("click", async () => { let n = 0; for (const name of await caches.keys()) { const c = await caches.open(name); for (const k of await c.keys()) if (/huggingface|hf\.co/.test(k.url)) { await c.delete(k); n++; } } log(`removed ${n} cached model files`); $("rec").disabled = true; asr = null; $("loadtime").textContent = "not loaded"; storageInfo(); });
+  $("clear").addEventListener("click", async () => { let n = 0; for (const name of await caches.keys()) { const c = await caches.open(name); for (const k of await c.keys()) if (/huggingface|hf\.co/.test(k.url)) { await c.delete(k); n++; } } log(`removed ${n} cached model files`); $("rec").disabled = true; worker?.terminate(); worker = null; $("loadtime").textContent = "not loaded"; storageInfo(); });
 </script>
 </body>
 </html>

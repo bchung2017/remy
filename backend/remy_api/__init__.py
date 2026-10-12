@@ -8,7 +8,7 @@ stackify-v1 skill for the pattern.
 import os
 
 from dotenv import load_dotenv
-from flask import Flask, send_from_directory
+from flask import Flask, request, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
@@ -83,6 +83,15 @@ def create_app() -> Flask:
     @app.route("/tokens.css")
     def tokens_css():
         return send_from_directory(BRAND_DIR, "tokens.css")
+
+    # The Whisper test page wants multithreaded WASM, which needs cross-origin
+    # isolation. Scoped to that page: COEP would break the app's other embeds.
+    @app.after_request
+    def isolate_whisper_test(resp):
+        if request.path == "/whisper-test.html":
+            resp.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+            resp.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
+        return resp
 
     return app
 
