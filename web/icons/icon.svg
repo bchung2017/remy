@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- remy mark: the cover's night slab, copper awning and a plate on the pass -->
+  <rect width="512" height="512" fill="#512546"/>
+  <rect x="96" y="96" width="320" height="136" rx="28" fill="#9e4e1c"/>
+  <g fill="#512546">
+    <rect x="128" y="120" width="16" height="88" rx="8"/>
+    <rect x="176" y="120" width="16" height="88" rx="8"/>
+    <rect x="224" y="120" width="16" height="88" rx="8"/>
+    <rect x="272" y="120" width="16" height="88" rx="8"/>
+    <rect x="320" y="120" width="16" height="88" rx="8"/>
+    <rect x="368" y="120" width="16" height="88" rx="8"/>
+  </g>
+  <rect x="96" y="264" width="136" height="152" rx="28" fill="#d9922a"/>
+  <rect x="264" y="264" width="152" height="152" rx="28" fill="#2d5a86"/>
+  <circle cx="256" cy="340" r="64" fill="#b5332a"/>
+</svg>

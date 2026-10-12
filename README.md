@@ -12,6 +12,7 @@ Docker web service.
 
 - **[Flask](https://flask.palletsprojects.com/)** — JSON API under `/api`, serves `web/` and `brand/tokens.css`
 - **Vanilla HTML/CSS/JS** frontend in `web/` (hash-routed, no bundler), styled from `brand/tokens.css`
+- **Installable PWA**: `web/manifest.webmanifest` + `web/sw.js` (network-first shell cache, API never cached)
 - **[Flask-SQLAlchemy](https://flask-sqlalchemy.palletsprojects.com/)** over **SQLite** by default
 - **Postgres/Supabase** when `DATABASE_URL` is set, pinned to `DB_SCHEMA`
   (the `stackify-v1` no-collision schema pattern)
@@ -122,6 +123,9 @@ web/
   index.html            shell; loads Google Fonts, tokens.css, app.css, app.js
   app.css               layout + components on top of the tokens
   app.js                hash router: #/ browse, #/new, #/r/:id, #/r/:id/edit
+  manifest.webmanifest  PWA manifest (standalone, start_url /)
+  sw.js                 service worker: caches the shell, passes /api through
+  icons/                icon.svg source + 192/512 PNG + apple-touch-icon
 backend/
   wsgi.py               dev entry / WSGI app (wsgi:app)
   requirements.txt

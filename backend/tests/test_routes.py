@@ -31,6 +31,16 @@ class Health(unittest.TestCase):
         self.assertEqual(c.get("/app.js").status_code, 200)
         self.assertIn(b"--copper", c.get("/tokens.css").data)
 
+    def test_serves_pwa_files(self):
+        c = make_client()
+        m = c.get("/manifest.webmanifest")
+        self.assertEqual(m.status_code, 200)
+        self.assertEqual(m.get_json()["start_url"], "/")
+        sw = c.get("/sw.js")
+        self.assertEqual(sw.status_code, 200)
+        self.assertTrue(sw.content_type.startswith("text/javascript") or sw.content_type.startswith("application/javascript"))
+        self.assertEqual(c.get("/icons/icon-512.png").status_code, 200)
+
 
 class Recipes(unittest.TestCase):
     def setUp(self):
