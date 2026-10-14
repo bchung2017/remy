@@ -30,6 +30,10 @@ class Health(unittest.TestCase):
         self.assertIn(b"<title>remy</title>", c.get("/").data)
         self.assertEqual(c.get("/app.js").status_code, 200)
         self.assertIn(b"--copper", c.get("/tokens.css").data)
+        r = c.get("/")   # cross-origin isolated so on-device Whisper can use WASM threads
+        self.assertEqual(r.headers.get("Cross-Origin-Embedder-Policy"), "require-corp")
+        self.assertEqual(r.headers.get("Cross-Origin-Opener-Policy"), "same-origin")
+        self.assertIsNone(c.get("/app.js").headers.get("Cross-Origin-Embedder-Policy"))
 
     def test_serves_pwa_files(self):
         c = make_client()

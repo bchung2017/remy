@@ -84,11 +84,14 @@ def create_app() -> Flask:
     def tokens_css():
         return send_from_directory(BRAND_DIR, "tokens.css")
 
-    # The Whisper test page wants multithreaded WASM, which needs cross-origin
-    # isolation. Scoped to that page: COEP would break the app's other embeds.
+    # On-device Whisper wants multithreaded WASM, which needs cross-origin
+    # isolation. Everything the app loads cross-origin (Google Fonts, jsDelivr,
+    # Hugging Face) is CORS-enabled, so COEP is safe on the app pages.
+    ISOLATED = {"/", "/index.html", "/whisper-test.html"}
+
     @app.after_request
-    def isolate_whisper_test(resp):
-        if request.path == "/whisper-test.html":
+    def isolate(resp):
+        if request.path in ISOLATED:
             resp.headers["Cross-Origin-Opener-Policy"] = "same-origin"
             resp.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
         return resp

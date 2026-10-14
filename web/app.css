@@ -133,6 +133,10 @@ body.rec-open { overflow: hidden; }
 .rec-text { flex: 1; width: 100%; max-width: 720px; margin: 0 auto; font: 400 24px/34px var(--font-body); min-height: 3em; }
 .rec-interim { color: var(--ink-muted); font-style: italic; }
 .rec-hint { width: 100%; max-width: 720px; margin: 0 auto; color: var(--ink-muted); font-size: 15px; line-height: 22px; }
+.rec-model { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; width: 100%; max-width: 720px; margin: 0 auto; font-size: 15px; color: var(--ink-muted); }
+.rec-model label { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--ink); }
+.rec-model input { width: auto; margin: 0; }
+.rec-finishing .rec-dot { animation: none; background: var(--lamp); box-shadow: none; }
 .rec-actions { display: flex; gap: var(--space-3); width: 100%; max-width: 720px; margin: 0 auto; }
 .rec-actions .btn { flex: 1; justify-content: center; min-height: 60px; font-size: 20px; }
 .rec-actions .rec-done { flex: 2; }

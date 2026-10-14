@@ -17,7 +17,7 @@ Docker web service.
 - **[Flask](https://flask.palletsprojects.com/)** — JSON API under `/api`, serves `web/` and `brand/tokens.css`
 - **Vanilla HTML/CSS/JS** frontend in `web/` (hash-routed, no bundler), styled from `brand/tokens.css`; notebooks autosave as you type
 - **Installable PWA**: `web/manifest.webmanifest` + `web/sw.js` (network-first shell cache, API never cached)
-- **AI cell**: speech-to-text in the browser (Web Speech API, no key), then formatting through the [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) and `claude-haiku-5-5` (`ANTHROPIC_API_KEY`). Key unset ⇒ `+ AI` is disabled; text and image cells still work
+- **AI cell**: speech-to-text on the device (Whisper via transformers.js in a Web Worker, no key, no Google), then formatting through the [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) and `claude-haiku-5-5` (`ANTHROPIC_API_KEY`). Key unset ⇒ `+ AI` is disabled; text and image cells still work
 - **[Flask-SQLAlchemy](https://flask-sqlalchemy.palletsprojects.com/)** over **SQLite** by default
 - **Postgres/Supabase** when `DATABASE_URL` is set, pinned to `DB_SCHEMA`
   (the `stackify-v1` no-collision schema pattern)
@@ -95,11 +95,14 @@ the arrow keys move the selection, Shift+arrow moves the cell, `Enter` edits,
   Render's ephemeral disk. Assets no block references are pruned on save.
 - **AI** is a cell with an input and an output. Press Dictate: a full-screen
   recording panel opens with a pulsing indicator, a live mic level meter, a
-  timer, the words as they are recognised, and a big Done button (Cancel or
-  Escape discards). Recognition is the browser's `SpeechRecognition` (Chrome,
-  Edge, iOS Safari; Chrome sends the audio to Google's recognizer; Firefox has
-  none, so you type instead) and is restarted automatically when the browser
-  stops it on silence. Edit the transcript if needed, press Run. The transcript goes to
+  timer, the words as they land, and a big Done button (Cancel or Escape
+  discards). Recognition runs on the device: `whisper-base.en` (or `tiny.en`,
+  a radio in the panel) through transformers.js in a Web Worker, downloaded
+  once (about 77 MB) into Cache Storage. Audio is captured as raw PCM and cut
+  into chunks at the first pause after 8 s (hard cut at 12 s); each chunk is
+  transcribed while you keep talking, so Done only waits for the tail. The
+  app pages are served with COOP/COEP so WASM can use threads. Edit the
+  transcript if needed, press Run. The transcript goes to
   `POST /api/recipes/draft`, which asks `claude-haiku-5-5` for
   `{title, body, tags}` through structured output. The cell becomes an `ai`
   block holding the formatted text (the output) and the transcript (the

@@ -24,11 +24,88 @@ const api = {
   draft: (b) => api.req("POST", "/recipes/draft", b),
 };
 const health = api.req("GET", "/health").catch(() => ({}));
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;   // browser speech-to-text; Chrome, Edge, iOS Safari
+// ---------- on-device speech-to-text (Whisper via transformers.js, in a Worker) ----------
+// No key, no Google. The model (about 77 MB) downloads once into Cache Storage. Audio is
+// captured as raw PCM, cut into chunks at pauses, and each chunk is transcribed while you
+// keep talking, so by Done only the tail is pending.
+const WHISPER_CDN = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js";
+const WHISPER_MODELS = { base: "onnx-community/whisper-base.en", tiny: "onnx-community/whisper-tiny.en" };
+const whisperPref = () => { try { return localStorage.getItem("remy.whisper") || "base"; } catch { return "base"; } };
+const whisper = { worker: null, ready: null, model: null, device: null, listeners: new Set() };
 
-// Full-screen recording panel: big live state (pulsing dot, mic level, timer, the words as
-// they land) and one big Done button. Chrome ends recognition on silence, so we restart it
-// until Done or Cancel. onText(final) is called for each committed phrase; onDone(ok).
+function whisperWorker() {
+  const src = `
+    import { pipeline, env } from "${WHISPER_CDN}";
+    env.allowLocalModels = false;
+    let asr = null;
+    self.onmessage = async (e) => {
+      const m = e.data;
+      try {
+        if (m.type === "load") {
+          asr = await pipeline("automatic-speech-recognition", m.model, { device: m.device, dtype: "q8", progress_callback: (p) => postMessage({ type: "progress", p }) });
+          postMessage({ type: "loaded" });
+        } else if (m.type === "transcribe") {
+          const r = await asr(m.audio, { chunk_length_s: 30, return_timestamps: false });
+          postMessage({ type: "result", seq: m.seq, text: r.text || "" });
+        }
+      } catch (err) { postMessage({ type: "error", seq: m.seq, message: String(err?.message || err) }); }
+    };`;
+  const w = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })), { type: "module" });
+  w.onmessage = (e) => whisper.listeners.forEach((fn) => fn(e.data));
+  return w;
+}
+
+// Load (or reuse) the model. onProgress(fraction, label) reports the download; resolves when ready.
+function whisperLoad(onProgress) {
+  const model = WHISPER_MODELS[whisperPref()] || WHISPER_MODELS.base;
+  if (whisper.ready && whisper.model === model) return whisper.ready;
+  whisper.worker?.terminate(); whisper.listeners.clear();
+  whisper.worker = whisperWorker(); whisper.model = model;
+  whisper.ready = (async () => {
+    let device = "wasm";
+    try { if (navigator.gpu && await navigator.gpu.requestAdapter()) device = "webgpu"; } catch {}
+    const attempt = (dev) => new Promise((resolve, reject) => {
+      const files = {};
+      const on = (m) => {
+        if (m.type === "progress" && m.p.file) {
+          if (m.p.status === "progress") files[m.p.file] = [m.p.loaded, m.p.total || m.p.loaded];
+          if (m.p.status === "done") files[m.p.file] = [1, 1];
+          const [l, t] = Object.values(files).reduce((a, [x, y]) => [a[0] + x, a[1] + y], [0, 0]);
+          onProgress?.(t ? l / t : 0, m.p.file);
+        } else if (m.type === "loaded") { whisper.listeners.delete(on); resolve(); }
+        else if (m.type === "error" && m.seq === undefined) { whisper.listeners.delete(on); reject(new Error(m.message)); }
+      };
+      whisper.listeners.add(on);
+      whisper.worker.postMessage({ type: "load", model, device: dev });
+    });
+    try { await attempt(device); whisper.device = device; }
+    catch (e) {
+      if (device !== "wasm") { whisper.worker.terminate(); whisper.worker = whisperWorker(); await attempt("wasm"); whisper.device = "wasm"; }
+      else throw e;
+    }
+  })();
+  whisper.ready.catch(() => { whisper.ready = null; });
+  return whisper.ready;
+}
+
+// Warm the worker at app open if the model is already cached (no unsolicited 77 MB download).
+(async () => {
+  try {
+    const h = await health; if (!h.draft || !window.caches) return;
+    const c = await caches.open("transformers-cache");
+    if ((await c.keys()).some((k) => k.url.includes(WHISPER_MODELS[whisperPref()]))) whisperLoad();
+  } catch {}
+})();
+
+function resample16k(pcm, from) {
+  if (from === 16000) return pcm;
+  const ratio = from / 16000, out = new Float32Array(Math.floor(pcm.length / ratio));
+  for (let i = 0; i < out.length; i++) { const x = i * ratio, j = Math.floor(x), f = x - j; out[i] = pcm[j] * (1 - f) + (pcm[Math.min(j + 1, pcm.length - 1)] || 0) * f; }
+  return out;
+}
+
+// Full-screen recording panel: pulsing dot, mic level, timer, the words as chunks come back,
+// one big Done. onText(text) per transcribed chunk; onDone(ok).
 function startDictation({ onText, onDone }) {
   const panel = document.createElement("div");
   panel.className = "rec"; panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", "Recording");
@@ -36,69 +113,99 @@ function startDictation({ onText, onDone }) {
     <div class="rec-top"><span class="rec-dot" aria-hidden="true"></span><span class="rec-label">Listening</span><span class="rec-time">0:00</span></div>
     <canvas class="rec-meter" width="600" height="80" aria-hidden="true"></canvas>
     <div class="rec-text" aria-live="polite"><span class="rec-final"></span><span class="rec-interim"></span></div>
-    <p class="rec-hint">Say the recipe the way you'd tell a friend. Pause whenever you like.</p>
+    <p class="rec-hint">Say the recipe the way you'd tell a friend. Pause whenever you like. Words appear a few seconds behind you.</p>
+    <div class="rec-model"><label><input type="radio" name="wm" value="base" ${whisperPref() === "base" ? "checked" : ""}> Accurate (base)</label><label><input type="radio" name="wm" value="tiny" ${whisperPref() === "tiny" ? "checked" : ""}> Fast (tiny)</label><span class="hint">applies next time</span></div>
     <div class="rec-actions"><button class="btn btn-ghost rec-cancel">Cancel</button><button class="btn btn-primary rec-done">Done</button></div>`;
   document.body.appendChild(panel); document.body.classList.add("rec-open");
   const $ = (c) => panel.querySelector(c);
-  const label = $(".rec-label"), finalEl = $(".rec-final"), interimEl = $(".rec-interim"), timeEl = $(".rec-time");
-
-  // mic level meter (separate capture; recognition keeps its own). Fails quietly on browsers that
-  // won't share the mic twice: the pulsing dot still shows state.
-  let stream = null, raf = 0, ctx = null;
-  const bars = new Array(48).fill(0);
-  const canvas = $(".rec-meter"), g = canvas.getContext("2d");
-  const fill = getComputedStyle(document.documentElement).getPropertyValue("--copper").trim() || "#9e4e1c";
-  navigator.mediaDevices?.getUserMedia({ audio: true }).then((st) => {
-    stream = st; ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const src = ctx.createMediaStreamSource(st), an = ctx.createAnalyser(); an.fftSize = 512; src.connect(an);
-    const buf = new Uint8Array(an.fftSize);
-    const draw = () => {
-      an.getByteTimeDomainData(buf);
-      let sum = 0; for (const v of buf) { const d = (v - 128) / 128; sum += d * d; }
-      bars.push(Math.min(1, Math.sqrt(sum / buf.length) * 4)); bars.shift();
-      g.clearRect(0, 0, canvas.width, canvas.height); g.fillStyle = fill;
-      const w = canvas.width / bars.length;
-      bars.forEach((b, i) => { const h = Math.max(3, b * canvas.height); g.fillRect(i * w + 1, (canvas.height - h) / 2, w - 2, h); });
-      raf = requestAnimationFrame(draw);
-    };
-    draw();
-  }).catch(() => { canvas.hidden = true; });
+  const label = $(".rec-label"), finalEl = $(".rec-final"), interimEl = $(".rec-interim"), timeEl = $(".rec-time"), done = $(".rec-done");
+  panel.querySelectorAll("input[name=wm]").forEach((r) => r.addEventListener("change", () => { try { localStorage.setItem("remy.whisper", r.value); } catch {} }));
 
   const t0 = Date.now();
   const tick = setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000); timeEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }, 500);
 
-  let rec = null, stopping = false, finalText = "";
-  const close = (ok) => {
-    if (stopping) return; stopping = true;
-    clearInterval(tick); cancelAnimationFrame(raf);
-    stream?.getTracks().forEach((t) => t.stop()); ctx?.close().catch(() => {});
-    try { rec?.stop(); } catch {}
-    panel.remove(); document.body.classList.remove("rec-open");
-    onDone(ok);
+  // --- model: load in the background; capture starts regardless so nothing said is lost ---
+  let modelReady = false, closed = false;
+  const pending = new Map();   // seq -> true while a chunk is in the worker
+  let nextSeq = 0, doneSeq = 0, results = {};
+  const status = () => {
+    if (closed) return;
+    const n = pending.size;
+    if (!modelReady) return;
+    interimEl.textContent = n ? ` …` : "";
+    label.textContent = n ? `Listening · ${n} chunk${n > 1 ? "s" : ""} transcribing` : "Listening";
   };
-  const begin = () => {
-    rec = new SR(); rec.continuous = true; rec.interimResults = true; rec.lang = navigator.language || "en-US";
-    rec.onresult = (e) => {
-      let live = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) { finalText = (finalText + " " + t.trim()).trim(); onText(t.trim()); } else live += t;
-      }
-      finalEl.textContent = finalText; interimEl.textContent = live ? " " + live : "";
-      label.textContent = "Listening"; panel.scrollTop = panel.scrollHeight;
-    };
-    rec.onerror = (e) => {
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") { label.textContent = "Microphone blocked. Allow it in the site settings, then try again."; panel.classList.add("rec-error"); stopping = true; try { rec.stop(); } catch {} stopping = false; rec = null; }
-      else if (e.error !== "no-speech" && e.error !== "aborted") label.textContent = "Hiccup: " + e.error + ". Still listening";
-    };
-    rec.onend = () => { if (!stopping && rec) { try { rec.start(); } catch {} } };   // Chrome stops on silence; keep going
-    rec.start();
+  whisperLoad((frac, file) => { if (!modelReady && !closed) label.textContent = frac < 1 ? `Loading speech model… ${Math.round(frac * 100)}%` : "Starting speech model…"; })
+    .then(() => { modelReady = true; status(); })
+    .catch((e) => { label.textContent = "Speech model failed: " + e.message; panel.classList.add("rec-error"); });
+
+  const onResult = (m) => {
+    if (m.type === "result" && pending.has(m.seq)) {
+      pending.delete(m.seq); results[m.seq] = (m.text || "").trim();
+      // emit in order
+      while (results[doneSeq] !== undefined) { const t = results[doneSeq]; delete results[doneSeq]; doneSeq++; if (t) { finalEl.textContent = (finalEl.textContent + " " + t).trim(); onText(t); } }
+      panel.scrollTop = panel.scrollHeight; status(); if (finishing) maybeFinish();
+    } else if (m.type === "error" && pending.has(m.seq)) { pending.delete(m.seq); results[m.seq] = ""; status(); if (finishing) maybeFinish(); }
   };
-  begin();
-  $(".rec-done").addEventListener("click", () => close(true));
-  $(".rec-cancel").addEventListener("click", () => close(false));
-  panel.addEventListener("keydown", (e) => { if (e.key === "Escape") close(false); });
-  $(".rec-done").focus();
+  whisper.listeners.add(onResult);
+
+  // --- capture: raw PCM, level meter, chunking at pauses ---
+  const canvas = $(".rec-meter"), g = canvas.getContext("2d");
+  const fill = getComputedStyle(document.documentElement).getPropertyValue("--copper").trim() || "#9e4e1c";
+  const bars = new Array(48).fill(0);
+  let stream = null, ac = null, proc = null, src = null, rate = 48000;
+  let chunk = [], chunkSamples = 0, silence = 0, peakInChunk = 0;
+  const MIN_CUT = 8, MAX_CUT = 12, PAUSE = 0.5, QUIET = 0.01;
+  const postChunk = () => {
+    if (!chunkSamples) return;
+    const n = chunkSamples, pcm = new Float32Array(n); let o = 0; for (const c of chunk) { pcm.set(c, o); o += c.length; }
+    const hadSpeech = peakInChunk >= QUIET && n / rate >= 0.6;
+    chunk = []; chunkSamples = 0; silence = 0; peakInChunk = 0;
+    if (!hadSpeech) return;
+    const audio = resample16k(pcm, rate), seq = nextSeq++;
+    pending.set(seq, true); status();
+    whisper.ready?.then(() => { if (!closed || finishing) whisper.worker.postMessage({ type: "transcribe", seq, audio }, [audio.buffer]); });
+  };
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(async (st) => {
+    if (closed) { st.getTracks().forEach((t) => t.stop()); return; }
+    stream = st; ac = new (window.AudioContext || window.webkitAudioContext)(); await ac.resume().catch(() => {}); rate = ac.sampleRate;
+    src = ac.createMediaStreamSource(st); proc = ac.createScriptProcessor(4096, 1, 1);
+    proc.onaudioprocess = (e) => {
+      const buf = e.inputBuffer.getChannelData(0);
+      let sum = 0, peak = 0; for (const v of buf) { sum += v * v; peak = Math.max(peak, Math.abs(v)); }
+      const rms = Math.sqrt(sum / buf.length);
+      bars.push(Math.min(1, rms * 4)); bars.shift();
+      chunk.push(new Float32Array(buf)); chunkSamples += buf.length; peakInChunk = Math.max(peakInChunk, peak);
+      silence = rms < QUIET ? silence + buf.length / rate : 0;
+      const dur = chunkSamples / rate;
+      if ((dur >= MIN_CUT && silence >= PAUSE) || dur >= MAX_CUT) postChunk();
+    };
+    src.connect(proc); proc.connect(ac.destination);
+    const draw = () => {
+      if (closed) return;
+      g.clearRect(0, 0, canvas.width, canvas.height); g.fillStyle = fill;
+      const w = canvas.width / bars.length;
+      bars.forEach((b, i) => { const h = Math.max(3, b * canvas.height); g.fillRect(i * w + 1, (canvas.height - h) / 2, w - 2, h); });
+      requestAnimationFrame(draw);
+    };
+    draw();
+  }).catch((e) => { label.textContent = e.name === "NotAllowedError" ? "Microphone blocked. Allow it in the site settings, then try again." : "Microphone: " + e.message; panel.classList.add("rec-error"); });
+
+  // --- finish / cancel ---
+  let finishing = false, ok = false;
+  const stopCapture = () => { try { proc?.disconnect(); src?.disconnect(); } catch {} stream?.getTracks().forEach((t) => t.stop()); ac?.close().catch(() => {}); };
+  const teardown = () => { closed = true; clearInterval(tick); whisper.listeners.delete(onResult); panel.remove(); document.body.classList.remove("rec-open"); onDone(ok); };
+  const maybeFinish = () => { if (pending.size === 0) teardown(); else label.textContent = `Finishing · ${pending.size} chunk${pending.size > 1 ? "s" : ""} left`; };
+  done.addEventListener("click", () => {
+    if (finishing) return;
+    finishing = true; ok = true; done.disabled = true; done.textContent = "Finishing…";
+    stopCapture(); postChunk(); panel.classList.add("rec-finishing");
+    if (!modelReady) { label.textContent = "Finishing · waiting for the speech model"; whisper.ready?.then(maybeFinish).catch(teardown); }
+    else maybeFinish();
+  });
+  $(".rec-cancel").addEventListener("click", () => { ok = false; stopCapture(); pending.clear(); teardown(); });
+  panel.addEventListener("keydown", (e) => { if (e.key === "Escape") { ok = false; stopCapture(); pending.clear(); teardown(); } });
+  done.focus();
 }
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -166,7 +273,7 @@ function cellHtml(b, n) {
   else if (b.type === "ai" && b.draft) body = `
     <div class="cell-in ai-in">
       <div class="ai-row">
-        ${SR ? `<button class="btn btn-sm dictate">● Dictate</button>` : `<span class="hint">No speech recognition in this browser. Type instead.</span>`}
+        <button class="btn btn-sm dictate">● Dictate</button>
         <span class="hint ai-note"></span>
         <button class="btn btn-sm btn-primary run" disabled>▶ Run</button>
       </div>
