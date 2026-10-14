@@ -94,6 +94,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--copper); ou
 }
 .cell:hover { background: var(--surface-raised); }
 .cell.selected { border-left-color: var(--copper); background: var(--surface-raised); }
+.cell.reading { border-left-color: var(--lamp); background: var(--surface-raised); box-shadow: inset 0 0 0 1px var(--lamp); }
 .cell:focus-visible { outline: 2px solid var(--copper); outline-offset: 0; }
 .gutter { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding-top: 6px; padding-right: var(--space-1); color: var(--ink-muted); font: 400 12px/14px var(--font-ticket); text-align: right; user-select: none; }
 .gutter .kind { font: 700 11px/14px var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--slate); }

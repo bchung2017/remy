@@ -254,6 +254,22 @@ async function renderBrowse() {
   }));
 }
 
+// Pick a text-to-speech voice: a local one in the user's language, else any in that language,
+// else the browser default. Resolves null when the device has no voices at all.
+async function pickVoice() {
+  if (!("speechSynthesis" in window)) return null;
+  let voices = speechSynthesis.getVoices();
+  if (!voices.length) {
+    await new Promise((res) => { const t = setTimeout(res, 1500); speechSynthesis.addEventListener("voiceschanged", () => { clearTimeout(t); res(); }, { once: true }); });
+    voices = speechSynthesis.getVoices();
+  }
+  if (!voices.length) return null;
+  const lang = (navigator.language || "en-US").toLowerCase(), base = lang.split("-")[0];
+  const match = (v, exact) => (exact ? v.lang.toLowerCase() === lang : v.lang.toLowerCase().startsWith(base));
+  return voices.find((v) => v.localService && match(v, true)) || voices.find((v) => v.localService && match(v, false))
+    || voices.find((v) => match(v, true)) || voices.find((v) => match(v, false)) || voices.find((v) => v.default) || voices[0];
+}
+
 // ---------- notebook page (Jupyter-style cells) ----------
 const TYPE_LABEL = { text: "Text", image: "Image", ai: "AI" };
 
@@ -328,6 +344,8 @@ async function renderRecipe(id) {
         <button class="btn btn-sm btn-ghost" id="t-up" title="Move cell up">↑</button>
         <button class="btn btn-sm btn-ghost" id="t-down" title="Move cell down">↓</button>
         <button class="btn btn-sm btn-ghost" id="t-del" title="Delete cell">× cell</button>
+        <span class="sep"></span>
+        <button class="btn btn-sm" id="t-read" title="Read the recipe aloud">▶ Read aloud</button>
       </div>
       <div class="cells" id="cells">${r.blocks.map((b, i) => cellHtml(b, i + 1)).join("")}</div>
       <p class="empty" id="nocells" ${r.blocks.length ? "hidden" : ""}>Empty notebook. Add a cell above.</p>
@@ -469,6 +487,46 @@ async function renderRecipe(id) {
     else if (e.key === "Enter") { e.preventDefault(); (selected.querySelector("textarea, input.caption") || selected).focus(); }
     else if (e.key === "d" || e.key === "Delete") { e.preventDefault(); remove(selected); }
   });
+
+  // --- read aloud: browser text-to-speech, one utterance per line so iOS/Chrome never
+  // cut a long one off; the cell being read is highlighted ---
+  const readBtn = view.querySelector("#t-read");
+  if (!("speechSynthesis" in window)) readBtn.hidden = true;
+  let reading = false;
+  const stopReading = () => {
+    reading = false; try { speechSynthesis.cancel(); } catch {}
+    cellsEl.querySelectorAll(".reading").forEach((e) => e.classList.remove("reading"));
+    readBtn.textContent = "▶ Read aloud";
+  };
+  readBtn.addEventListener("click", async () => {
+    if (reading) return stopReading();
+    const voice = await pickVoice();
+    if (voice === null) { err("No text-to-speech voices on this device. On Android, install or enable a speech engine in Settings → Accessibility → Text-to-speech."); return; }
+    const items = [];
+    const title = view.querySelector("#title").value.trim(); if (title) items.push({ text: title, el: null });
+    cellsEl.querySelectorAll(".cell:not(.draft)").forEach((el) => {
+      const ta = el.querySelector("textarea.text"); if (!ta) return;
+      ta.value.split(/\n+/).map((l) => l.trim()).filter(Boolean).forEach((line) => items.push({ text: line, el }));
+    });
+    if (!items.length) { err("Nothing to read yet."); return; }
+    err(""); reading = true; readBtn.textContent = "■ Stop";
+    let i = 0;
+    const next = () => {
+      if (!reading || i >= items.length) return stopReading();
+      const { text, el } = items[i++];
+      cellsEl.querySelectorAll(".reading").forEach((e) => e.classList.remove("reading"));
+      el?.classList.add("reading"); el?.scrollIntoView({ block: "nearest" });
+      const u = new SpeechSynthesisUtterance(text);
+      if (voice) u.voice = voice; u.lang = voice?.lang || navigator.language || "en-US"; u.rate = 0.95;
+      u.onend = next;
+      u.onerror = (e) => { if (e.error === "interrupted" || e.error === "canceled") return; err("Speech failed: " + e.error); stopReading(); };
+      speechSynthesis.speak(u);
+    };
+    try { speechSynthesis.cancel(); } catch {}
+    next();
+  });
+  window.addEventListener("hashchange", stopReading, { once: true });
+  window.addEventListener("pagehide", stopReading, { once: true });
 
   const del = view.querySelector("#del");
   del.addEventListener("click", () => {
