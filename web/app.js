@@ -240,6 +240,7 @@ async function renderBrowse() {
 }
 
 // ---------- notebook page (Jupyter-style cells) ----------
+let draftOn = false;   // set from /api/health before cells render; shows Format on text cells
 const TYPE_LABEL = { text: "Text", image: "Image", ai: "AI" };
 
 function cellHtml(b, n) {
@@ -269,7 +270,8 @@ function cellHtml(b, n) {
     <div class="cell-in ai-in"><details class="transcript-view"><summary class="hint">Transcript</summary><p>${esc(b.transcript)}</p></details></div>
     <div class="cell-out"><textarea class="text" rows="1" aria-label="Formatted recipe">${esc(b.text)}</textarea></div>`;
   else body = `
-    <div class="cell-in"><textarea class="text" rows="1" placeholder="Write here" aria-label="Text">${esc(b.text)}</textarea></div>`;
+    <div class="cell-in"><textarea class="text" rows="1" placeholder="Write here, or paste a recipe dump" aria-label="Text">${esc(b.text)}</textarea></div>
+    ${draftOn ? `<div class="cell-foot"><button class="btn btn-sm btn-ghost fmt" type="button" title="Tidy this text into ingredients and steps with Claude" ${b.text.trim() ? "" : "disabled"}>✦ Format</button></div>` : ""}`;
   return `<section class="cell cell-${b.type} ${b.draft ? "draft" : ""}" data-id="${esc(b.id)}" data-type="${b.type}" tabindex="-1">${gutter}<div class="cell-body">${body}</div>${tools}</section>`;
 }
 
@@ -292,7 +294,7 @@ async function shrinkImage(file) {
 async function renderRecipe(id) {
   let r;
   try { r = await api.get(id); } catch { view.innerHTML = `<p class="empty">Not found. <a href="#/">Back</a></p>`; return; }
-  const h = await health;
+  const h = await health; draftOn = !!h.draft;
   let saveTimer, saving = Promise.resolve();
 
   view.innerHTML = `
@@ -382,6 +384,24 @@ async function renderRecipe(id) {
       const act = b.dataset.act;
       if (act === "up") move(el, -1); else if (act === "down") move(el, 1); else remove(el);
     }));
+    const fmt = el.querySelector(".fmt");
+    if (fmt) {
+      const ta = el.querySelector("textarea.text");
+      ta.addEventListener("input", () => { fmt.disabled = !ta.value.trim(); });
+      fmt.addEventListener("click", async () => {
+        const text = ta.value.trim(); if (!text) return;
+        fmt.disabled = true; fmt.textContent = "Formatting…"; err("");
+        const title = view.querySelector("#title").value.trim();
+        try {
+          const d = await api.draft({ transcript: text, title: title === "Untitled" ? "" : title });
+          ta.value = d.body; grow(ta);
+          if (!title || title === "Untitled") view.querySelector("#title").value = d.title;
+          if (!view.querySelector("#tags").value.trim()) view.querySelector("#tags").value = d.tags.join(", ");
+          await save();
+        } catch (ex) { err(ex.message); }
+        fmt.textContent = "✦ Format"; fmt.disabled = !ta.value.trim();
+      });
+    }
     const run = el.querySelector(".run");
     if (run) {
       const ta = el.querySelector(".transcript"), out = el.querySelector(".cell-out"), mic = el.querySelector(".dictate"), note = el.querySelector(".ai-note");

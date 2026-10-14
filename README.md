@@ -77,6 +77,10 @@ python reset_db.py --yes
 A recipe's `blocks` is the ordered cell list as JSON. `body` is derived from
 the text of text and AI cells, so search and list previews keep working.
 
+A text cell has a `✦ Format` button: paste or type a recipe dump and it is
+tidied in place into ingredients and steps by the same endpoint the AI cell
+uses (shown only when `ANTHROPIC_API_KEY` is set).
+
 In the notebook: `+ Text`, `+ Image`, `+ AI` insert after the selected cell
 (or at the end). A selected cell takes ↑ ↓ and `× cell` from the toolbar or
 its own hover tools. With a cell selected and no field focused: `j`/`k` or

@@ -99,6 +99,9 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--copper); ou
 .gutter .kind { font: 700 11px/14px var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--slate); }
 .cell-ai .gutter .kind { color: var(--copper); }
 .cell-body { min-width: 0; display: grid; gap: var(--space-1); }
+.cell-foot { display: flex; justify-content: flex-end; }
+.cell-foot .btn { opacity: .55; }
+.cell:hover .cell-foot .btn, .cell.selected .cell-foot .btn, .cell-foot .btn:focus-visible { opacity: 1; }
 .cell-in, .cell-out { min-width: 0; }
 .cell-in textarea, .cell-out textarea {
   padding: var(--space-1) var(--space-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
