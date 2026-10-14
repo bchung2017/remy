@@ -8,7 +8,7 @@ stackify-v1 skill for the pattern.
 import os
 
 from dotenv import load_dotenv
-from flask import Flask, request, send_from_directory
+from flask import Flask, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
@@ -84,17 +84,6 @@ def create_app() -> Flask:
     def tokens_css():
         return send_from_directory(BRAND_DIR, "tokens.css")
 
-    # On-device Whisper wants multithreaded WASM, which needs cross-origin
-    # isolation. Everything the app loads cross-origin (Google Fonts, jsDelivr,
-    # Hugging Face) is CORS-enabled, so COEP is safe on the app pages.
-    ISOLATED = {"/", "/index.html", "/whisper-test.html"}
-
-    @app.after_request
-    def isolate(resp):
-        if request.path in ISOLATED:
-            resp.headers["Cross-Origin-Opener-Policy"] = "same-origin"
-            resp.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
-        return resp
 
     return app
 

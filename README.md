@@ -17,7 +17,7 @@ Docker web service.
 - **[Flask](https://flask.palletsprojects.com/)** — JSON API under `/api`, serves `web/` and `brand/tokens.css`
 - **Vanilla HTML/CSS/JS** frontend in `web/` (hash-routed, no bundler), styled from `brand/tokens.css`; notebooks autosave as you type
 - **Installable PWA**: `web/manifest.webmanifest` + `web/sw.js` (network-first shell cache, API never cached)
-- **AI cell**: speech-to-text on the device (Whisper via transformers.js in a Web Worker, no key, no Google), then formatting through the [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) and `claude-haiku-5-5` (`ANTHROPIC_API_KEY`). Key unset ⇒ `+ AI` is disabled; text and image cells still work
+- **AI cell**: speech-to-text through Groq's Whisper API (`GROQ_API_KEY`, about $0.04 per hour of audio), then formatting through the [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) and `claude-haiku-5-5` (`ANTHROPIC_API_KEY`). Anthropic key unset ⇒ `+ AI` is disabled; Groq key unset ⇒ Dictate is disabled and you type instead
 - **[Flask-SQLAlchemy](https://flask-sqlalchemy.palletsprojects.com/)** over **SQLite** by default
 - **Postgres/Supabase** when `DATABASE_URL` is set, pinned to `DB_SCHEMA`
   (the `stackify-v1` no-collision schema pattern)
@@ -96,13 +96,17 @@ the arrow keys move the selection, Shift+arrow moves the cell, `Enter` edits,
 - **AI** is a cell with an input and an output. Press Dictate: a full-screen
   recording panel opens with a pulsing indicator, a live mic level meter, a
   timer, the words as they land, and a big Done button (Cancel or Escape
-  discards). Recognition runs on the device: `whisper-base.en` (or `tiny.en`,
-  a radio in the panel) through transformers.js in a Web Worker, downloaded
-  once (about 77 MB) into Cache Storage. Audio is captured as raw PCM and cut
-  into chunks at the first pause after 8 s (hard cut at 12 s); each chunk is
-  transcribed while you keep talking, so Done only waits for the tail. The
-  app pages are served with COOP/COEP so WASM can use threads. Edit the
-  transcript if needed, press Run. The transcript goes to
+  discards). The browser only captures: raw PCM is cut into chunks at the
+  first pause after 5 s (hard cut at 10 s), each chunk is encoded as 16 kHz
+  WAV and posted to `POST /api/transcribe`, which forwards it to Groq's
+  `whisper-large-v3-turbo` with the previous chunk's text as the prompt for
+  continuity. Up to two chunks are in flight; results are applied in order
+  while you keep talking, so Done only waits for the tail. Edit the
+  transcript if needed, press Run.
+- Groq limits (same on the free and developer plans): 20 requests/min, 2000
+  per day, 2 hours of audio per hour, 8 hours per day. A 429 shows in the
+  panel as a hiccup and the chunk is skipped. Chunk sizing keeps continuous
+  talking at roughly 6 to 12 requests a minute. The transcript goes to
   `POST /api/recipes/draft`, which asks `claude-haiku-5-5` for
   `{title, body, tags}` through structured output. The cell becomes an `ai`
   block holding the formatted text (the output) and the transcript (the
@@ -168,6 +172,7 @@ deduped. Writes take `blocks`; a legacy `body` string becomes one text block.
 | `GET`    | `/tags`         | `[{tag, count}]` across all recipes                              |
 | `POST`   | `/recipes/:id/assets` | multipart image upload → `{id, contentType, size, url}`     |
 | `GET`    | `/assets/:id`   | the stored image bytes                                           |
+| `POST`   | `/transcribe`   | multipart audio chunk (+ optional `prompt`) → `{text}` via Groq; 503 when off |
 | `POST`   | `/recipes/draft` | `{transcript, title?}` → `{title, body, tags}` via Claude; 503 when off |
 
 ## Layout
@@ -185,7 +190,6 @@ web/
   manifest.webmanifest  PWA manifest (standalone, start_url /)
   sw.js                 service worker: caches the shell, passes /api through
   icons/                icon.svg source + 192/512 PNG + apple-touch-icon
-  whisper-test.html     standalone test: download whisper-base.en via transformers.js, cache it, transcribe 5 s
 backend/
   wsgi.py               dev entry / WSGI app (wsgi:app)
   requirements.txt
@@ -197,6 +201,7 @@ backend/
     models.py           Recipe (blocks JSON + derived body), Asset (image bytes)
     routes.py           /api blueprint
     llm.py              transcript -> draft via claude-haiku-5-5 (structured output)
+    stt.py              audio chunk -> text via Groq whisper-large-v3-turbo
     seed.py             one-time seed when the table is empty
   scripts/
     migrate_sqlite_to_pg.py   one-shot SQLite → Postgres copier (guarded)
@@ -204,5 +209,6 @@ backend/
     test_config.py      backend-selection + schema-isolation unit tests
     test_routes.py      recipe CRUD/search tests on throwaway SQLite
     test_draft.py       draft endpoint with the model call mocked
+    test_transcribe.py  transcribe endpoint and the Groq client, HTTP mocked
     test_assets.py      image upload/serve/prune
 ```

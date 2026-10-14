@@ -3,7 +3,7 @@ import anthropic
 from flask import Blueprint, Response, current_app, jsonify, request
 from sqlalchemy import or_
 
-from . import db, llm
+from . import db, llm, stt
 from .models import Asset, Recipe, new_id, normalize_blocks
 
 api = Blueprint("api", __name__, url_prefix="/api")
@@ -58,6 +58,7 @@ def health():
         "backend": current_app.config.get("REMY_BACKEND"),
         "schema": current_app.config.get("REMY_DB_SCHEMA"),
         "draft": llm.enabled(),
+        "voice": stt.enabled(),
     }
 
 
@@ -175,8 +176,38 @@ def get_asset(asset_id: str):
                     headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
-# --- AI cell: dictated transcript -> Haiku draft ------------------------------
-# Speech-to-text happens in the browser (Web Speech API); only text reaches here.
+# --- AI cell: audio chunk -> transcript (Groq Whisper) ------------------------
+
+MAX_CHUNK_BYTES = 10 * 1024 * 1024
+
+
+@api.post("/transcribe")
+def transcribe_chunk():
+    """One recorded chunk (multipart `file`, wav/webm/m4a) -> {text}. The client
+    cuts a dictation into chunks at pauses and posts each as it closes, so the
+    transcript builds while the cook is still talking. Optional `prompt` form
+    field carries the previous chunk's text for continuity."""
+    if not stt.enabled():
+        return jsonify({"error": "transcription is off: GROQ_API_KEY is not set"}), 503
+    f = request.files.get("file")
+    if f is None or not f.filename:
+        return jsonify({"error": "file is required"}), 400
+    ctype = (f.mimetype or "").split(";")[0].strip().lower()
+    if not (ctype.startswith("audio/") or ctype.startswith("video/")):
+        return jsonify({"error": "file must be audio"}), 415
+    data = f.read(MAX_CHUNK_BYTES + 1)
+    if len(data) > MAX_CHUNK_BYTES:
+        return jsonify({"error": "chunk larger than 10 MB"}), 413
+    if not data:
+        return jsonify({"error": "file is empty"}), 400
+    try:
+        text = stt.transcribe(data, ctype, f.filename, request.form.get("prompt", ""))
+    except stt.SttError as e:
+        return jsonify({"error": str(e)}), e.status
+    return jsonify({"text": text})
+
+
+# --- AI cell: transcript -> Haiku draft ---------------------------------------
 
 @api.post("/recipes/draft")
 def draft_recipe():

@@ -94,7 +94,6 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--copper); ou
 }
 .cell:hover { background: var(--surface-raised); }
 .cell.selected { border-left-color: var(--copper); background: var(--surface-raised); }
-.cell.reading { border-left-color: var(--lamp); background: var(--surface-raised); box-shadow: inset 0 0 0 1px var(--lamp); }
 .cell:focus-visible { outline: 2px solid var(--copper); outline-offset: 0; }
 .gutter { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding-top: 6px; padding-right: var(--space-1); color: var(--ink-muted); font: 400 12px/14px var(--font-ticket); text-align: right; user-select: none; }
 .gutter .kind { font: 700 11px/14px var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--slate); }
@@ -134,9 +133,6 @@ body.rec-open { overflow: hidden; }
 .rec-text { flex: 1; width: 100%; max-width: 720px; margin: 0 auto; font: 400 24px/34px var(--font-body); min-height: 3em; }
 .rec-interim { color: var(--ink-muted); font-style: italic; }
 .rec-hint { width: 100%; max-width: 720px; margin: 0 auto; color: var(--ink-muted); font-size: 15px; line-height: 22px; }
-.rec-model { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; width: 100%; max-width: 720px; margin: 0 auto; font-size: 15px; color: var(--ink-muted); }
-.rec-model label { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--ink); }
-.rec-model input { width: auto; margin: 0; }
 .rec-finishing .rec-dot { animation: none; background: var(--lamp); box-shadow: none; }
 .rec-actions { display: flex; gap: var(--space-3); width: 100%; max-width: 720px; margin: 0 auto; }
 .rec-actions .btn { flex: 1; justify-content: center; min-height: 60px; font-size: 20px; }

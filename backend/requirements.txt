@@ -5,3 +5,4 @@ python-dotenv==1.0.1
 psycopg[binary]>=3.1   # only used when DATABASE_URL points at Postgres
 gunicorn>=21.0         # prod WSGI server (optional in dev)
 anthropic>=1.13        # AI cell: formats a dictated transcript (off unless ANTHROPIC_API_KEY is set)
+requests>=2.31         # AI cell: audio chunks -> Groq Whisper (off unless GROQ_API_KEY is set)

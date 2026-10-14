@@ -17,6 +17,10 @@ services:
       # Secret; set in the dashboard. Unset ⇒ "+ AI" is disabled.
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Speech-to-text for the AI cell (Groq Whisper, ~$0.04/hour of audio).
+      # Secret; set in the dashboard. Unset ⇒ Dictate is disabled, typing works.
+      - key: GROQ_API_KEY
+        sync: false
       # remy's isolated Postgres schema (a namespace inside the one database).
       - key: DB_SCHEMA
         value: remy
