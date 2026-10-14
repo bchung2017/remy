@@ -43,40 +43,83 @@ function resample16k(pcm, from) {
   return out;
 }
 
-// Full-screen recording panel: pulsing dot, mic level, timer, the words as chunks come back,
-// one big Done. onText(text) per transcribed chunk; onDone(ok).
-function startDictation({ onText, onDone }) {
+// Which recognizer: the browser's own (Web Speech API, free, Chrome/Edge/Safari) by default;
+// Groq upload when it is absent or fails the way a phone without Google's speech engine does.
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const sttPref = () => { try { return localStorage.getItem("remy.stt") || ""; } catch { return ""; } };
+const sttRemember = (mode) => { try { localStorage.setItem("remy.stt", mode); } catch {} };
+const SR_FATAL = new Set(["network", "service-not-allowed", "language-not-supported", "bad-grammar"]);
+
+// Full-screen recording panel: pulsing dot, mic level, timer, the words as they land, one
+// big Done. onText(text) per committed phrase or chunk; onDone(ok).
+function startDictation({ onText, onDone, groq }) {
   const panel = document.createElement("div");
   panel.className = "rec"; panel.setAttribute("role", "dialog"); panel.setAttribute("aria-label", "Recording");
   panel.innerHTML = `
     <div class="rec-top"><span class="rec-dot" aria-hidden="true"></span><span class="rec-label">Listening</span><span class="rec-time">0:00</span></div>
     <canvas class="rec-meter" width="600" height="80" aria-hidden="true"></canvas>
     <div class="rec-text" aria-live="polite"><span class="rec-final"></span><span class="rec-interim"></span></div>
-    <p class="rec-hint">Say the recipe the way you'd tell a friend. Pause whenever you like. Words appear a few seconds behind you.</p>
+    <p class="rec-hint">Say the recipe the way you'd tell a friend. Pause whenever you like. <span class="rec-engine"></span></p>
     <div class="rec-actions"><button class="btn btn-ghost rec-cancel">Cancel</button><button class="btn btn-primary rec-done">Done</button></div>`;
   document.body.appendChild(panel); document.body.classList.add("rec-open");
   const $ = (c) => panel.querySelector(c);
-  const label = $(".rec-label"), finalEl = $(".rec-final"), interimEl = $(".rec-interim"), timeEl = $(".rec-time"), done = $(".rec-done");
+  const label = $(".rec-label"), finalEl = $(".rec-final"), interimEl = $(".rec-interim"), timeEl = $(".rec-time"), done = $(".rec-done"), engineEl = $(".rec-engine");
+  const fail = (msg) => { label.textContent = msg; panel.classList.add("rec-error"); };
 
   const t0 = Date.now();
   const tick = setInterval(() => { const s = Math.floor((Date.now() - t0) / 1000); timeEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }, 500);
 
-  // --- upload queue: chunks go out as they close (2 in flight), results applied in order ---
-  let closed = false, finishing = false, ok = false, nextSeq = 0, doneSeq = 0, lastText = "";
+  let closed = false, finishing = false, ok = false;
+  let mode = (SR && sttPref() !== "groq") ? "browser" : (groq ? "groq" : "none");
+  const addFinal = (t) => { t = t.trim(); if (!t) return; finalEl.textContent = (finalEl.textContent + " " + t).trim(); onText(t); panel.scrollTop = panel.scrollHeight; };
+
+  // ---- browser recognizer ----
+  let rec = null, gotAny = false, ends = 0;
+  const startBrowser = () => {
+    engineEl.textContent = "Using this browser's speech recognition.";
+    rec = new SR(); rec.continuous = true; rec.interimResults = true; rec.lang = navigator.language || "en-US";
+    rec.onresult = (e) => {
+      if (closed) return;
+      let live = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) { gotAny = true; addFinal(t); } else live += t;
+      }
+      interimEl.textContent = live ? " " + live : ""; if (!panel.classList.contains("rec-error")) label.textContent = "Listening";
+    };
+    rec.onerror = (e) => {
+      if (closed) return;
+      if (e.error === "not-allowed") fail("Microphone blocked. Allow it in the site settings, then try again.");
+      else if (SR_FATAL.has(e.error) && !gotAny) switchToGroq(`This browser's recognizer failed (${e.error}).`);
+      else if (e.error !== "no-speech" && e.error !== "aborted") label.textContent = "Hiccup: " + e.error + ". Still listening";
+    };
+    rec.onend = () => {
+      if (closed || finishing || mode !== "browser") return;
+      ends++;
+      if (!gotAny && ends >= 3 && Date.now() - t0 < 8000) return switchToGroq("This browser's recognizer isn't producing text.");
+      try { rec.start(); } catch {}   // Chrome stops on silence; keep going
+    };
+    try { rec.start(); } catch (e) { switchToGroq("This browser's recognizer could not start."); }
+  };
+  const switchToGroq = (why) => {
+    try { rec?.abort(); } catch {} rec = null;
+    if (!groq) { fail(why + " Set GROQ_API_KEY to fall back to cloud transcription, or type the recipe instead."); return; }
+    mode = "groq"; sttRemember("groq"); interimEl.textContent = "";
+    engineEl.textContent = why + " Switched to cloud transcription for this and future recordings.";
+    label.textContent = "Listening"; status();
+  };
+
+  // ---- Groq upload queue ----
+  let nextSeq = 0, doneSeq = 0, lastText = "", inflight = 0;
   const results = {}, pending = new Set(), queue = [];
-  let inflight = 0, failures = 0;
   const status = () => {
-    if (closed) return;
-    const n = pending.size;
-    interimEl.textContent = n ? " …" : "";
-    if (!panel.classList.contains("rec-error")) label.textContent = finishing ? `Finishing · ${n} left` : n ? `Listening · ${n} chunk${n > 1 ? "s" : ""} transcribing` : "Listening";
+    if (closed || mode !== "groq" || panel.classList.contains("rec-error")) return;
+    const n = pending.size; interimEl.textContent = n ? " …" : "";
+    label.textContent = finishing ? `Finishing · ${n} left` : n ? `Listening · ${n} chunk${n > 1 ? "s" : ""} transcribing` : "Listening";
   };
   const drain = () => {
-    while (results[doneSeq] !== undefined) {
-      const t = results[doneSeq]; delete results[doneSeq]; doneSeq++;
-      if (t) { lastText = t; finalEl.textContent = (finalEl.textContent + " " + t).trim(); onText(t); }
-    }
-    panel.scrollTop = panel.scrollHeight; status(); if (finishing) maybeFinish();
+    while (results[doneSeq] !== undefined) { const t = results[doneSeq]; delete results[doneSeq]; doneSeq++; if (t) { lastText = t; addFinal(t); } }
+    status(); if (finishing) maybeFinish();
   };
   const pump = () => {
     while (inflight < 2 && queue.length) {
@@ -84,18 +127,18 @@ function startDictation({ onText, onDone }) {
       const fd = new FormData(); fd.append("file", blob, `chunk-${seq}.wav`); if (lastText) fd.append("prompt", lastText);
       api.req("POST", "/transcribe", fd, true)
         .then((r) => { results[seq] = (r.text || "").trim(); })
-        .catch((e) => { results[seq] = ""; failures++; if (!panel.classList.contains("rec-error")) label.textContent = "Transcription hiccup: " + e.message; })
+        .catch((e) => { results[seq] = ""; if (!panel.classList.contains("rec-error")) label.textContent = "Transcription hiccup: " + e.message; })
         .finally(() => { inflight--; pending.delete(seq); drain(); pump(); });
     }
   };
 
-  // --- capture: raw PCM, level meter, chunking at pauses ---
+  // ---- capture: always on for the level meter; chunked + uploaded only in groq mode ----
   const canvas = $(".rec-meter"), g = canvas.getContext("2d");
   const fill = getComputedStyle(document.documentElement).getPropertyValue("--copper").trim() || "#9e4e1c";
   const bars = new Array(48).fill(0);
   let stream = null, ac = null, proc = null, src = null, rate = 48000;
   let chunk = [], chunkSamples = 0, silence = 0, peakInChunk = 0;
-  const MIN_CUT = 5, MAX_CUT = 10, PAUSE = 0.4, QUIET = 0.01;  // seconds; Groq bills per audio second, and 5-10 s chunks keep continuous talking under its 20 requests/min cap
+  const MIN_CUT = 5, MAX_CUT = 10, PAUSE = 0.4, QUIET = 0.01;  // seconds; 5-10 s chunks keep continuous talking under Groq's 20 requests/min
   const postChunk = () => {
     if (!chunkSamples) return;
     const n = chunkSamples, pcm = new Float32Array(n); let o = 0; for (const c of chunk) { pcm.set(c, o); o += c.length; }
@@ -114,6 +157,7 @@ function startDictation({ onText, onDone }) {
       let sum = 0, peak = 0; for (const v of buf) { sum += v * v; peak = Math.max(peak, Math.abs(v)); }
       const rms = Math.sqrt(sum / buf.length);
       bars.push(Math.min(1, rms * 4)); bars.shift();
+      if (mode !== "groq") { chunk = []; chunkSamples = 0; return; }
       chunk.push(new Float32Array(buf)); chunkSamples += buf.length; peakInChunk = Math.max(peakInChunk, peak);
       silence = rms < QUIET ? silence + buf.length / rate : 0;
       const dur = chunkSamples / rate;
@@ -128,16 +172,21 @@ function startDictation({ onText, onDone }) {
       requestAnimationFrame(draw);
     };
     draw();
-  }).catch((e) => { label.textContent = e.name === "NotAllowedError" ? "Microphone blocked. Allow it in the site settings, then try again." : "Microphone: " + e.message; panel.classList.add("rec-error"); });
+  }).catch((e) => { fail(e.name === "NotAllowedError" ? "Microphone blocked. Allow it in the site settings, then try again." : "Microphone: " + e.message); });
 
-  // --- finish / cancel ---
+  if (mode === "browser") startBrowser();
+  else if (mode === "groq") { engineEl.textContent = SR ? "Using cloud transcription." : "No speech recognition in this browser; using cloud transcription."; }
+  else fail("No speech recognition in this browser and GROQ_API_KEY is not set. Type the recipe instead.");
+
+  // ---- finish / cancel ----
   const stopCapture = () => { try { proc?.disconnect(); src?.disconnect(); } catch {} stream?.getTracks().forEach((t) => t.stop()); ac?.close().catch(() => {}); };
-  const teardown = () => { closed = true; clearInterval(tick); panel.remove(); document.body.classList.remove("rec-open"); onDone(ok); };
+  const teardown = () => { closed = true; clearInterval(tick); try { rec?.stop(); } catch {} panel.remove(); document.body.classList.remove("rec-open"); onDone(ok); };
   const maybeFinish = () => { if (pending.size === 0) teardown(); else status(); };
   done.addEventListener("click", () => {
     if (finishing) return;
-    postChunk(); finishing = true; ok = true; done.disabled = true; done.textContent = "Finishing…";
-    stopCapture(); panel.classList.add("rec-finishing"); maybeFinish();
+    ok = true; finishing = true; done.disabled = true; done.textContent = "Finishing…";
+    if (mode === "groq") { postChunk(); stopCapture(); panel.classList.add("rec-finishing"); maybeFinish(); }
+    else { stopCapture(); teardown(); }   // browser finals already landed as they were spoken
   });
   $(".rec-cancel").addEventListener("click", () => { ok = false; stopCapture(); pending.clear(); teardown(); });
   panel.addEventListener("keydown", (e) => { if (e.key === "Escape") { ok = false; stopCapture(); pending.clear(); teardown(); } });
@@ -209,7 +258,7 @@ function cellHtml(b, n) {
   else if (b.type === "ai" && b.draft) body = `
     <div class="cell-in ai-in">
       <div class="ai-row">
-        <button class="btn btn-sm dictate" ${b.voice ? "" : 'disabled title="Set GROQ_API_KEY to enable dictation"'}>● Dictate</button>
+        <button class="btn btn-sm dictate" ${(SR || b.voice) ? "" : 'disabled title="No speech recognition in this browser; set GROQ_API_KEY for cloud transcription"'}>● Dictate</button>
         <span class="hint ai-note"></span>
         <button class="btn btn-sm btn-primary run" disabled>▶ Run</button>
       </div>
@@ -342,6 +391,7 @@ async function renderRecipe(id) {
         const before = ta.value; err(""); note.textContent = "";
         mic.disabled = true;
         startDictation({
+          groq: !!h.voice,
           onText: (t) => { ta.value = (ta.value.trimEnd() + " " + t).trim(); refresh(); },
           onDone: (ok) => { mic.disabled = false; if (!ok) ta.value = before; refresh(); if (ok && ta.value.trim()) note.textContent = "Edit if needed, then Run."; (ok ? run : ta).focus(); },
         });

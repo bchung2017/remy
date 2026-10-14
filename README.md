@@ -17,7 +17,7 @@ Docker web service.
 - **[Flask](https://flask.palletsprojects.com/)** — JSON API under `/api`, serves `web/` and `brand/tokens.css`
 - **Vanilla HTML/CSS/JS** frontend in `web/` (hash-routed, no bundler), styled from `brand/tokens.css`; notebooks autosave as you type
 - **Installable PWA**: `web/manifest.webmanifest` + `web/sw.js` (network-first shell cache, API never cached)
-- **AI cell**: speech-to-text through Groq's Whisper API (`GROQ_API_KEY`, about $0.04 per hour of audio), then formatting through the [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) and `claude-haiku-5-5` (`ANTHROPIC_API_KEY`). Anthropic key unset ⇒ `+ AI` is disabled; Groq key unset ⇒ Dictate is disabled and you type instead
+- **AI cell**: speech-to-text with the browser's own recognizer (Web Speech API, free) by default, falling back to Groq's Whisper API (`GROQ_API_KEY`, about $0.04 per hour of audio) when the browser has none or it fails; then formatting through the [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) and `claude-haiku-5-5` (`ANTHROPIC_API_KEY`). Anthropic key unset ⇒ `+ AI` is disabled
 - **[Flask-SQLAlchemy](https://flask-sqlalchemy.palletsprojects.com/)** over **SQLite** by default
 - **Postgres/Supabase** when `DATABASE_URL` is set, pinned to `DB_SCHEMA`
   (the `stackify-v1` no-collision schema pattern)
@@ -96,13 +96,18 @@ the arrow keys move the selection, Shift+arrow moves the cell, `Enter` edits,
 - **AI** is a cell with an input and an output. Press Dictate: a full-screen
   recording panel opens with a pulsing indicator, a live mic level meter, a
   timer, the words as they land, and a big Done button (Cancel or Escape
-  discards). The browser only captures: raw PCM is cut into chunks at the
-  first pause after 5 s (hard cut at 10 s), each chunk is encoded as 16 kHz
-  WAV and posted to `POST /api/transcribe`, which forwards it to Groq's
-  `whisper-large-v3-turbo` with the previous chunk's text as the prompt for
-  continuity. Up to two chunks are in flight; results are applied in order
-  while you keep talking, so Done only waits for the tail. Edit the
-  transcript if needed, press Run.
+  discards). Recognition is the browser's own `SpeechRecognition` when it
+  works (Chrome, Edge, iOS Safari; Chrome hands the audio to Google's
+  engine), restarted automatically when the browser stops it on silence.
+  If the API is absent (Firefox) or fails at start (a phone without Google's
+  speech engine reports `network` or `service-not-allowed`), the panel
+  switches to cloud transcription and remembers that choice: raw PCM is cut
+  into chunks at the first pause after 5 s (hard cut at 10 s), encoded as
+  16 kHz WAV and posted to `POST /api/transcribe`, which forwards it to
+  Groq's `whisper-large-v3-turbo` with the previous chunk's text as the
+  prompt. Up to two chunks in flight, results applied in order while you
+  keep talking. The panel says which engine is in use. Edit the transcript
+  if needed, press Run.
 - Groq limits (same on the free and developer plans): 20 requests/min, 2000
   per day, 2 hours of audio per hour, 8 hours per day. A 429 shows in the
   panel as a hiccup and the chunk is skipped. Chunk sizing keeps continuous
