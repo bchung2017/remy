@@ -260,7 +260,7 @@ function cellHtml(b, n) {
       <div class="ai-row">
         <button class="btn btn-sm dictate" ${(SR || b.voice) ? "" : 'disabled title="No speech recognition in this browser; set GROQ_API_KEY for cloud transcription"'}>● Dictate</button>
         <span class="hint ai-note"></span>
-        <button class="btn btn-sm btn-primary run" disabled>▶ Run</button>
+        <button class="btn btn-sm btn-primary run" disabled>✦ Format</button>
       </div>
       <textarea class="transcript" rows="1" placeholder="Say the recipe the way you'd tell a friend. Edit here before running." aria-label="Transcript"></textarea>
     </div>
@@ -393,12 +393,12 @@ async function renderRecipe(id) {
         startDictation({
           groq: !!h.voice,
           onText: (t) => { ta.value = (ta.value.trimEnd() + " " + t).trim(); refresh(); },
-          onDone: (ok) => { mic.disabled = false; if (!ok) ta.value = before; refresh(); if (ok && ta.value.trim()) note.textContent = "Edit if needed, then Run."; (ok ? run : ta).focus(); },
+          onDone: (ok) => { mic.disabled = false; if (!ok) ta.value = before; refresh(); if (ok && ta.value.trim()) note.textContent = "Edit if needed, then Format."; (ok ? run : ta).focus(); },
         });
       });
       run.addEventListener("click", async () => {
         const transcript = ta.value.trim(); if (!transcript) return;
-        run.disabled = true; run.textContent = "Running…"; out.hidden = false; out.textContent = "Formatting with Claude…"; err("");
+        run.disabled = true; run.textContent = "Formatting…"; out.hidden = false; out.textContent = "Formatting with Claude…"; err("");
         const title = view.querySelector("#title").value.trim();
         try {
           const d = await api.draft({ transcript, title: title === "Untitled" ? "" : title });
@@ -410,7 +410,7 @@ async function renderRecipe(id) {
           if (!view.querySelector("#tags").value.trim()) view.querySelector("#tags").value = d.tags.join(", ");
           await save();
         } catch (ex) {
-          err(ex.message); out.textContent = "Failed: " + ex.message; run.disabled = false; run.textContent = "▶ Run";
+          err(ex.message); out.textContent = "Failed: " + ex.message; run.disabled = false; run.textContent = "✦ Format";
         }
       });
     }

@@ -3,7 +3,7 @@
 A small recipe book. Each recipe is a Jupyter-style notebook: a title, tags,
 and numbered cells you insert, move and delete from a toolbar. Three cell
 types: **Text**, **Image** (photo upload, stored in the database), and **AI**
-(input: dictate with the browser's speech recognition, or type; press Run;
+(input: dictate with the browser's speech recognition, or type; press Format;
 output: the recipe formatted into ingredients and steps by Claude, with the
 transcript kept). Browse, search, filter by tag, sort, delete.
 
@@ -107,7 +107,7 @@ the arrow keys move the selection, Shift+arrow moves the cell, `Enter` edits,
   Groq's `whisper-large-v3-turbo` with the previous chunk's text as the
   prompt. Up to two chunks in flight, results applied in order while you
   keep talking. The panel says which engine is in use. Edit the transcript
-  if needed, press Run.
+  if needed, press Format.
 - Groq limits (same on the free and developer plans): 20 requests/min, 2000
   per day, 2 hours of audio per hour, 8 hours per day. A 429 shows in the
   panel as a hiccup and the chunk is skipped. Chunk sizing keeps continuous
