@@ -96,6 +96,7 @@ def create_app() -> Flask:
 # treats an empty `blocks` with a non-empty `body` as one legacy text block.
 ADDED_COLUMNS = [
     ("recipes", "blocks", "TEXT NOT NULL DEFAULT '[]'"),
+    ("recipes", "compiled", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 

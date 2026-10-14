@@ -31,6 +31,10 @@ def _validate(data: dict, partial: bool) -> tuple[dict, list | None, str | None]
         if tags is not None and not isinstance(tags, (list, str)):
             return {}, None, "tags must be a list of strings"
         values["tags"] = Recipe.pack_tags(tags)[:400]
+    if "compiled" in data:
+        if data["compiled"] is not None and not isinstance(data["compiled"], str):
+            return {}, None, "compiled must be a string"
+        values["compiled"] = (data["compiled"] or "")[:60000]
     if "blocks" in data:
         try:
             blocks = normalize_blocks(data["blocks"])
@@ -68,7 +72,7 @@ def list_recipes():
     search = (request.args.get("q") or "").strip()
     if search:
         like = f"%{search}%"
-        q = q.filter(or_(Recipe.title.ilike(like), Recipe.body.ilike(like), Recipe.tags.ilike(like)))
+        q = q.filter(or_(Recipe.title.ilike(like), Recipe.body.ilike(like), Recipe.compiled.ilike(like), Recipe.tags.ilike(like)))
     tag = (request.args.get("tag") or "").strip().lower()
     if tag:
         q = q.filter(Recipe.tags.like(f"%,{tag},%"))
@@ -205,6 +209,65 @@ def transcribe_chunk():
     except stt.SttError as e:
         return jsonify({"error": str(e)}), e.status
     return jsonify({"text": text})
+
+
+# --- Recipe tab: all cells -> one clean recipe; highlight -> revise ------------
+
+def _llm_errors(fn):
+    """Run fn(); map SDK / refusal errors to a JSON response, else return (result, None)."""
+    try:
+        return fn(), None
+    except anthropic.RateLimitError:
+        return None, (jsonify({"error": "rate limited, try again in a minute"}), 429)
+    except anthropic.APIConnectionError:
+        return None, (jsonify({"error": "could not reach the model"}), 502)
+    except anthropic.APIStatusError as e:
+        return None, (jsonify({"error": f"model error ({e.status_code})"}), 502)
+    except ValueError as e:
+        return None, (jsonify({"error": str(e)}), 422)
+
+
+@api.post("/recipes/<int:recipe_id>/compile")
+def compile_recipe(recipe_id: int):
+    """Read every text/AI cell in order and write one clean recipe into `compiled`.
+    An untitled page takes the drafted title; empty tags take the drafted tags."""
+    if not llm.enabled():
+        return jsonify({"error": "drafting is off: ANTHROPIC_API_KEY is not set"}), 503
+    recipe = db.session.get(Recipe, recipe_id)
+    if recipe is None:
+        return jsonify({"error": "not found"}), 404
+    notes = [b["text"] for b in recipe.block_list() if b["type"] in ("text", "ai") and b.get("text", "").strip()]
+    if not notes:
+        return jsonify({"error": "no text to compile yet"}), 400
+    title_hint = "" if recipe.title == UNTITLED else recipe.title
+    draft, errresp = _llm_errors(lambda: llm.compile_recipe(notes, title_hint))
+    if errresp:
+        return errresp
+    recipe.compiled = draft.body.strip()[:60000]
+    if recipe.title == UNTITLED and draft.title.strip():
+        recipe.title = draft.title.strip()[:200]
+    if not recipe.tags:
+        recipe.tags = Recipe.pack_tags(draft.tags)[:400]
+    db.session.commit()
+    return jsonify(recipe.to_dict())
+
+
+@api.post("/recipes/revise")
+def revise_recipe():
+    """{text, start, end, instruction?} -> {replacement} for text[start:end]. Nothing saved."""
+    if not llm.enabled():
+        return jsonify({"error": "drafting is off: ANTHROPIC_API_KEY is not set"}), 503
+    data = request.get_json(silent=True) or {}
+    text, start, end = data.get("text"), data.get("start"), data.get("end")
+    if not isinstance(text, str) or not text.strip():
+        return jsonify({"error": "text is required"}), 400
+    if not (isinstance(start, int) and isinstance(end, int) and 0 <= start < end <= len(text)):
+        return jsonify({"error": "start/end must select a span of the text"}), 400
+    instruction = data.get("instruction") if isinstance(data.get("instruction"), str) else ""
+    replacement, errresp = _llm_errors(lambda: llm.revise_span(text, start, end, instruction))
+    if errresp:
+        return errresp
+    return jsonify({"replacement": replacement})
 
 
 # --- AI cell: transcript -> Haiku draft ---------------------------------------

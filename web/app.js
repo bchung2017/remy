@@ -248,6 +248,7 @@ function cellHtml(b, n) {
   const tools = `<div class="cell-tools">
       <button data-act="up" title="Move up" aria-label="Move up">↑</button>
       <button data-act="down" title="Move down" aria-label="Move down">↓</button>
+      <button data-act="merge" title="Merge with the cell below" aria-label="Merge with the cell below">⤵</button>
       <button data-act="del" title="Delete cell" aria-label="Delete cell">×</button>
     </div>`;
   let body;
@@ -268,7 +269,8 @@ function cellHtml(b, n) {
     <div class="cell-out hint" hidden></div>`;
   else if (b.type === "ai") body = `
     <div class="cell-in ai-in"><details class="transcript-view"><summary class="hint">Transcript</summary><p>${esc(b.transcript)}</p></details></div>
-    <div class="cell-out"><textarea class="text" rows="1" aria-label="Formatted recipe">${esc(b.text)}</textarea></div>`;
+    <div class="cell-out"><textarea class="text" rows="1" aria-label="Formatted recipe">${esc(b.text)}</textarea></div>
+    ${draftOn ? `<div class="cell-foot"><button class="btn btn-sm btn-ghost fmt" type="button" title="Format this text again with Claude" ${b.text.trim() ? "" : "disabled"}>✦ Format</button></div>` : ""}`;
   else body = `
     <div class="cell-in"><textarea class="text" rows="1" placeholder="Write here, or paste a recipe dump" aria-label="Text">${esc(b.text)}</textarea></div>
     ${draftOn ? `<div class="cell-foot"><button class="btn btn-sm btn-ghost fmt" type="button" title="Tidy this text into ingredients and steps with Claude" ${b.text.trim() ? "" : "disabled"}>✦ Format</button></div>` : ""}`;
@@ -291,7 +293,7 @@ async function shrinkImage(file) {
   return blob ? new File([blob], (file.name || "photo").replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" }) : file;
 }
 
-async function renderRecipe(id) {
+async function renderRecipe(id, tab = "notes") {
   let r;
   try { r = await api.get(id); } catch { view.innerHTML = `<p class="empty">Not found. <a href="#/">Back</a></p>`; return; }
   const h = await health; draftOn = !!h.draft;
@@ -306,6 +308,24 @@ async function renderRecipe(id) {
           <span class="status" id="status">${when(r.updatedAt)}</span>
         </div>
       </header>
+      <nav class="tabs" role="tablist">
+        <a class="tab ${tab === "notes" ? "on" : ""}" role="tab" href="#/r/${id}">Notes</a>
+        <a class="tab ${tab === "recipe" ? "on" : ""}" role="tab" href="#/r/${id}/recipe">Recipe${r.compiled ? "" : " ·"}</a>
+      </nav>
+      <section id="pane-recipe" ${tab === "recipe" ? "" : "hidden"}>
+        <div class="nb-toolbar" role="toolbar" aria-label="Recipe">
+          ${h.draft ? `<button class="btn btn-sm btn-primary" id="compile">✦ ${r.compiled ? "Regenerate" : "Generate"} from notes</button>` : `<button class="btn btn-sm" disabled title="Set ANTHROPIC_API_KEY to enable">✦ Generate from notes</button>`}
+          <span class="hint" id="compile-hint">${r.compiled ? "Reads every text and AI cell and rewrites this. Your edits here are replaced." : "Reads every text and AI cell and writes one clean recipe here."}</span>
+        </div>
+        <textarea class="compiled" id="compiled" rows="1" placeholder="Nothing here yet. Generate from your notes, or write the recipe directly." aria-label="Recipe">${esc(r.compiled)}</textarea>
+        <div class="fixbar" id="fixbar" hidden>
+          <span class="fixbar-sel" id="fixsel"></span>
+          <input id="fixwhat" placeholder="What should change? (optional)" aria-label="What should change">
+          <button class="btn btn-sm btn-primary" id="fixgo">✦ Fix</button>
+          <button class="btn btn-sm btn-ghost" id="fixno">Cancel</button>
+        </div>
+      </section>
+      <section id="pane-notes" ${tab === "notes" ? "" : "hidden"}>
       <div class="nb-toolbar" role="toolbar" aria-label="Cells">
         <button class="btn btn-sm" data-add="text">+ Text</button>
         <label class="btn btn-sm" for="add-image">+ Image</label>
@@ -314,10 +334,12 @@ async function renderRecipe(id) {
         <span class="sep"></span>
         <button class="btn btn-sm btn-ghost" id="t-up" title="Move cell up">↑</button>
         <button class="btn btn-sm btn-ghost" id="t-down" title="Move cell down">↓</button>
+        <button class="btn btn-sm btn-ghost" id="t-merge" title="Merge the selected cell with the one below">⤵ merge</button>
         <button class="btn btn-sm btn-ghost" id="t-del" title="Delete cell">× cell</button>
       </div>
       <div class="cells" id="cells">${r.blocks.map((b, i) => cellHtml(b, i + 1)).join("")}</div>
       <p class="empty" id="nocells" ${r.blocks.length ? "hidden" : ""}>Empty notebook. Add a cell above.</p>
+      </section>
       <p class="error" id="err" hidden></p>
       <footer class="nb-foot">
         <button class="btn btn-danger" id="del">Delete recipe</button>
@@ -347,7 +369,7 @@ async function renderRecipe(id) {
     status.textContent = "Saving…";
     saving = saving.then(async () => {
       try {
-        r = await api.update(id, { title: view.querySelector("#title").value, tags: view.querySelector("#tags").value, blocks: readBlocks() });
+        r = await api.update(id, { title: view.querySelector("#title").value, tags: view.querySelector("#tags").value, blocks: readBlocks(), compiled: view.querySelector("#compiled").value });
         status.textContent = "Saved"; err("");
       } catch (e) { status.textContent = "Not saved"; err(e.message); }
     });
@@ -368,6 +390,23 @@ async function renderRecipe(id) {
     dir < 0 ? sib.before(el) : sib.after(el);
     renumber(); el.focus({ preventScroll: true }); el.scrollIntoView({ block: "nearest" }); save();
   };
+  // merge a text/AI cell into the one below it (images can't merge); result is a text cell
+  // unless both are AI, in which case the transcripts are joined too
+  const mergeable = (a, b) => a && b && ["text", "ai"].includes(a.dataset.type) && ["text", "ai"].includes(b.dataset.type) && !a.classList.contains("draft") && !b.classList.contains("draft");
+  const merge = (el) => {
+    const below = el?.nextElementSibling;
+    if (!mergeable(el, below)) { err("Only text and AI cells can merge, and the cell needs a text or AI cell below it."); return; }
+    const txt = (c) => c.querySelector("textarea.text").value.trim();
+    const joined = [txt(el), txt(below)].filter(Boolean).join("\n\n");
+    const both = el.dataset.type === "ai" && below.dataset.type === "ai";
+    const blk = both
+      ? { id: uid(), type: "ai", text: joined, transcript: [transcripts[el.dataset.id], transcripts[below.dataset.id]].filter(Boolean).join(" ") }
+      : { id: uid(), type: "text", text: joined };
+    if (both) transcripts[blk.id] = blk.transcript;
+    el.insertAdjacentHTML("beforebegin", cellHtml(blk, 0));
+    const merged = el.previousElementSibling; wire(merged); el.remove(); below.remove();
+    renumber(); select(merged); merged.focus({ preventScroll: true }); err(""); save();
+  };
   const remove = (el) => {
     if (!el) return;
     const next = el.nextElementSibling || el.previousElementSibling;
@@ -382,7 +421,7 @@ async function renderRecipe(id) {
     el.querySelectorAll(".cell-tools button").forEach((b) => b.addEventListener("click", (e) => {
       e.stopPropagation();
       const act = b.dataset.act;
-      if (act === "up") move(el, -1); else if (act === "down") move(el, 1); else remove(el);
+      if (act === "up") move(el, -1); else if (act === "down") move(el, 1); else if (act === "merge") merge(el); else remove(el);
     }));
     const fmt = el.querySelector(".fmt");
     if (fmt) {
@@ -464,6 +503,7 @@ async function renderRecipe(id) {
   view.querySelector("#t-up").addEventListener("click", () => move(selected, -1));
   view.querySelector("#t-down").addEventListener("click", () => move(selected, 1));
   view.querySelector("#t-del").addEventListener("click", () => remove(selected));
+  view.querySelector("#t-merge").addEventListener("click", () => { if (selected) merge(selected); else err("Select a cell first."); });
 
   // keyboard: with a cell selected and no field focused, j/k or arrows move selection, shift+arrows move the cell, d deletes
   view.querySelector(".nb").addEventListener("keydown", (e) => {
@@ -474,6 +514,59 @@ async function renderRecipe(id) {
     else if (e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); e.shiftKey ? move(selected, 1) : (selected.nextElementSibling && (select(selected.nextElementSibling), selected.focus())); }
     else if (e.key === "Enter") { e.preventDefault(); (selected.querySelector("textarea, input.caption") || selected).focus(); }
     else if (e.key === "d" || e.key === "Delete") { e.preventDefault(); remove(selected); }
+    else if (e.key === "m") { e.preventDefault(); merge(selected); }
+  });
+
+  // --- Recipe tab: the compiled recipe, generate/regenerate, highlight-and-fix ---
+  const compiledEl = view.querySelector("#compiled");
+  grow(compiledEl);
+  compiledEl.addEventListener("input", () => { grow(compiledEl); saveSoon(); });
+  compiledEl.addEventListener("blur", () => { setTimeout(() => { if (!fixbar.contains(document.activeElement)) save(); }, 0); });
+  view.querySelectorAll(".tab").forEach((a) => a.addEventListener("click", () => { clearTimeout(saveTimer); save(); }));
+  const compileBtn = view.querySelector("#compile");
+  if (compileBtn) compileBtn.addEventListener("click", async () => {
+    compileBtn.disabled = true; const was = compileBtn.textContent; compileBtn.textContent = "✦ Reading your notes…"; err("");
+    await save();
+    try {
+      r = await api.req("POST", `/recipes/${id}/compile`);
+      compiledEl.value = r.compiled; grow(compiledEl);
+      view.querySelector("#title").value = r.title; view.querySelector("#tags").value = r.tags.join(", ");
+      compileBtn.textContent = "✦ Regenerate from notes";
+      view.querySelector("#compile-hint").textContent = "Reads every text and AI cell and rewrites this. Your edits here are replaced.";
+      view.querySelector('.tab[href$="/recipe"]').textContent = "Recipe";
+      status.textContent = "Saved";
+    } catch (ex) { err(ex.message); compileBtn.textContent = was; }
+    compileBtn.disabled = false;
+  });
+
+  // select text in the recipe -> a bar offers to fix just that span (optional instruction)
+  const fixbar = view.querySelector("#fixbar"), fixsel = view.querySelector("#fixsel"), fixwhat = view.querySelector("#fixwhat");
+  let sel = null;
+  const showFix = () => {
+    const a = compiledEl.selectionStart, b = compiledEl.selectionEnd;
+    if (b - a < 2 || !h.draft) { if (!fixbar.contains(document.activeElement)) { fixbar.hidden = true; sel = null; } return; }
+    sel = { start: a, end: b };
+    const snippet = compiledEl.value.slice(a, b).replace(/\s+/g, " ").trim();
+    fixsel.textContent = `“${snippet.length > 60 ? snippet.slice(0, 57) + "…" : snippet}”`;
+    fixbar.hidden = false;
+  };
+  compiledEl.addEventListener("select", showFix);
+  compiledEl.addEventListener("mouseup", showFix);
+  compiledEl.addEventListener("keyup", (e) => { if (e.shiftKey || e.key.startsWith("Arrow")) showFix(); });
+  view.querySelector("#fixno").addEventListener("click", () => { fixbar.hidden = true; sel = null; fixwhat.value = ""; compiledEl.focus(); });
+  fixwhat.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); view.querySelector("#fixgo").click(); } });
+  view.querySelector("#fixgo").addEventListener("click", async () => {
+    if (!sel) return;
+    const go = view.querySelector("#fixgo"); go.disabled = true; go.textContent = "✦ Fixing…"; err("");
+    const text = compiledEl.value, { start, end } = sel;
+    try {
+      const d = await api.req("POST", "/recipes/revise", { text, start, end, instruction: fixwhat.value });
+      compiledEl.value = text.slice(0, start) + d.replacement + text.slice(end);
+      grow(compiledEl); compiledEl.focus(); compiledEl.setSelectionRange(start + d.replacement.length, start + d.replacement.length);
+      fixbar.hidden = true; sel = null; fixwhat.value = "";
+      await save();
+    } catch (ex) { err(ex.message); }
+    go.disabled = false; go.textContent = "✦ Fix";
   });
 
   const del = view.querySelector("#del");
@@ -496,7 +589,7 @@ function route() {
   let m;
   if (h === "#/" || h === "#") return renderBrowse();
   if (h === "#/new") return newRecipe();
-  if ((m = h.match(/^#\/r\/(\d+)$/))) return renderRecipe(m[1]);
+  if ((m = h.match(/^#\/r\/(\d+)(\/recipe)?$/))) return renderRecipe(m[1], m[2] ? "recipe" : "notes");
   location.hash = "#/";
 }
 window.addEventListener("hashchange", route);

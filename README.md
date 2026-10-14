@@ -77,9 +77,21 @@ python reset_db.py --yes
 A recipe's `blocks` is the ordered cell list as JSON. `body` is derived from
 the text of text and AI cells, so search and list previews keep working.
 
-A text cell has a `✦ Format` button: paste or type a recipe dump and it is
-tidied in place into ingredients and steps by the same endpoint the AI cell
-uses (shown only when `ANTHROPIC_API_KEY` is set).
+Text and AI cells have a `✦ Format` button: paste or type a recipe dump and
+it is tidied in place into ingredients and steps; press it again any time to
+re-format (shown only when `ANTHROPIC_API_KEY` is set). Text and AI cells
+merge with the cell below them (`⤵` on the cell, `⤵ merge` in the toolbar,
+or `m`); images don't merge. Merging two AI cells keeps both transcripts.
+
+Each page has two tabs. **Notes** is the cell notebook. **Recipe** is the
+one clean recipe: `✦ Generate from notes` sends every text and AI cell, in
+order, to `POST /api/recipes/:id/compile`, which asks `claude-haiku-5-5` to
+merge them (later notes win on conflicts, repetition removed, nothing
+invented) and stores the result in `compiled`, editable in place and
+autosaved. Highlight any span of the recipe and a bar appears: type what
+should change (or nothing, to just tidy it) and `✦ Fix` sends the full text,
+the span and the instruction to `POST /api/recipes/revise`, which returns a
+replacement for that span only. Search covers the compiled recipe too.
 
 In the notebook: `+ Text`, `+ Image`, `+ AI` insert after the selected cell
 (or at the end). A selected cell takes ↑ ↓ and `× cell` from the toolbar or
@@ -176,13 +188,15 @@ deduped. Writes take `blocks`; a legacy `body` string becomes one text block.
 | `GET`    | `/recipes`      | list; `?q=` searches title/body/tags, `?tag=` filters, `?sort=updated\|created\|title` |
 | `POST`   | `/recipes`      | create `{title?, blocks?, tags?}` (empty body ⇒ an Untitled page) |
 | `GET`    | `/recipes/:id`  | read one                                                         |
-| `PUT`    | `/recipes/:id`  | partial update of `title`, `blocks`, `tags`                      |
+| `PUT`    | `/recipes/:id`  | partial update of `title`, `blocks`, `tags`, `compiled`          |
 | `DELETE` | `/recipes/:id`  | delete                                                           |
 | `GET`    | `/tags`         | `[{tag, count}]` across all recipes                              |
 | `POST`   | `/recipes/:id/assets` | multipart image upload → `{id, contentType, size, url}`     |
 | `GET`    | `/assets/:id`   | the stored image bytes                                           |
 | `POST`   | `/transcribe`   | multipart audio chunk (+ optional `prompt`) → `{text}` via Groq; 503 when off |
 | `POST`   | `/recipes/draft` | `{transcript, title?}` → `{title, body, tags}` via Claude; 503 when off |
+| `POST`   | `/recipes/:id/compile` | every text/AI cell → one clean recipe stored in `compiled`; returns the recipe |
+| `POST`   | `/recipes/revise` | `{text, start, end, instruction?}` → `{replacement}` for that span; nothing saved |
 
 ## Layout
 
@@ -218,6 +232,7 @@ backend/
     test_config.py      backend-selection + schema-isolation unit tests
     test_routes.py      recipe CRUD/search tests on throwaway SQLite
     test_draft.py       draft endpoint with the model call mocked
+    test_compile.py     compile and revise endpoints with the model call mocked
     test_transcribe.py  transcribe endpoint and the Groq client, HTTP mocked
     test_assets.py      image upload/serve/prune
 ```

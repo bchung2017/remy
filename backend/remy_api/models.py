@@ -71,6 +71,7 @@ class Recipe(db.Model):
     title = db.Column(db.String(200), nullable=False)
     blocks = db.Column(db.Text, nullable=False, default="[]")      # JSON list, see module doc
     body = db.Column(db.Text, nullable=False, default="")          # derived: text of all text/ai blocks
+    compiled = db.Column(db.Text, nullable=False, default="")      # the one clean recipe built from the cells (Recipe tab)
     tags = db.Column(db.String(400), nullable=False, default="")  # ",a,b," — padded for LIKE matching
     created_at = db.Column(db.DateTime, nullable=False, default=_utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
@@ -112,6 +113,7 @@ class Recipe(db.Model):
             "id": self.id,
             "title": self.title,
             "body": self.body,
+            "compiled": self.compiled or "",
             "blocks": self.block_list(),
             "tags": self.tag_list(),
             "createdAt": self.created_at.isoformat() if self.created_at else None,
