@@ -611,6 +611,7 @@ async function newRecipe() {
 function route() {
   const h = location.hash || "#/";
   let m;
+  view.classList.toggle("wide", h === "#/" || h === "#"); document.body.classList.toggle("home", h === "#/" || h === "#");
   if (h === "#/" || h === "#") return renderHome();
   if (h === "#/book") return renderBook();
   if (h === "#/new") return newRecipe();

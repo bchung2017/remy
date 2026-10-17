@@ -6,13 +6,15 @@ Jupyter-style notebook of numbered cells you insert, move, merge and delete
 from a toolbar. Three cell types: **Text**, **Image** (photo upload, stored
 in the database), and **Voice** (dictate with the browser's speech
 recognition or, when that's missing, Groq; the transcript becomes the note).
-The home page is the pass: a shelf with the cookbook, an order rail with up
-to three starred recipes clipped up as tickets, and the stove. Clicking the
-book lifts it to the camera, opens it, flips to the middle and lands on the
-open spread (`#/book`): search, tag filter, sort, and a table of contents
-with the first photo of each page. Star a page (from its header or the
-spread) to hang it on the pass; a fourth star demotes the oldest one instead
-of refusing.
+The home page is the pass: an order rail with up to three starred recipes
+clipped up as tickets, and the counter below it with the range, a pot and
+skillet, and the cookbook standing beside them. On desktop the whole scene
+is zoomed to fill the window. Clicking the book lifts it to the camera,
+opens it, flips a couple of pages and lands on the cookbook (`#/book`): a
+single column with search, tag filter and sort on top and the table of
+contents below, with the first photo of each page. Star a page (from its
+header or the cookbook) to hang it on the pass; a fourth star demotes the
+oldest one instead of refusing.
 
 A **Flask + SQLite** JSON API plus a no-build static frontend, swapping to
 **Postgres/Supabase** via `DATABASE_URL`, isolated in its own schema so it can
@@ -234,7 +236,7 @@ web/
   index.html            shell; loads Google Fonts, tokens.css, app.css, app.js
   app.css               layout + components on top of the tokens
   app.js                hash router: #/ the pass, #/book the open cookbook, #/new (creates, opens Notes), #/r/:id Recipe tab, #/r/:id/notes
-  home.js / home.css    the pass scene (shelf, 3D book, ticket rail, stove SVG), the book flight, the open-book browse
+  home.js / home.css    the pass scene (ticket rail, counter SVG, 3D book), the book flight, the cookbook list
   manifest.webmanifest  PWA manifest (standalone, start_url /)
   sw.js                 service worker: caches the shell, passes /api through
   icons/                icon.svg source + 192/512 PNG + apple-touch-icon

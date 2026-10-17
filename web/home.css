@@ -1,21 +1,26 @@
 /* ===== the pass (home) ===== */
 .pass { display: grid; gap: 0; max-width: 880px; margin: 0 auto; }
+/* desktop: the whole scene is zoomed (set by fitPass) so it fills the screen below the nav */
+.view.wide { max-width: none; padding-bottom: var(--space-6); }
 
-/* shelf with the cookbook on it */
-.shelf-row { position: relative; height: 150px; perspective: 900px; }
-.shelf { position: absolute; left: 0; right: 0; bottom: 18px; height: 14px; border-radius: 3px; background: var(--copper); box-shadow: 0 6px 0 0 color-mix(in srgb, var(--copper) 70%, var(--ink)); }
-.shelf::after { content: ""; position: absolute; left: 24px; right: 24px; top: 100%; height: 10px; background: linear-gradient(to bottom, rgba(42,33,48,.22), transparent); }
-.book { position: absolute; right: 56px; bottom: 32px; width: 96px; height: 128px; padding: 0; border: 0; background: transparent; cursor: pointer; perspective: 900px; }
+/* the cookbook stands on the right of the worktop, beside the pan */
+.counter { position: relative; margin-top: var(--space-6); perspective: 900px; }
+.book { position: absolute; left: 75.5%; bottom: 58.3%; width: 11%; aspect-ratio: 3 / 4; padding: 0; border: 0; background: transparent; cursor: pointer; perspective: 900px; }
 .book:focus-visible { outline: 2px solid var(--copper); outline-offset: 6px; border-radius: var(--radius-sm); }
-.shelf-label { position: absolute; left: 0; bottom: 44px; color: var(--ink-muted); font: 500 14px/20px var(--font-ticket); text-decoration: none; }
-.shelf-label:hover { color: var(--copper); }
+.counter-label { position: absolute; right: 4.5%; top: 7%; color: var(--ink-muted); font: 500 14px/20px var(--font-ticket); text-decoration: none; }
+.counter-label:hover { color: var(--copper); }
 
 /* the 3D book: pages stacked under a cover that swings on its spine */
 .book-3d { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transform: rotateX(58deg) rotateZ(-14deg) translateZ(0); transition: transform 750ms cubic-bezier(.2,.7,.2,1); }
 .book:hover .book-3d { transform: rotateX(50deg) rotateZ(-10deg) translateZ(8px); }
-.book-back, .book-page, .book-cover { position: absolute; inset: 0; border-radius: 2px 6px 6px 2px; backface-visibility: hidden; }
-.book-back { background: var(--aubergine); transform: translateZ(-14px); box-shadow: 0 14px 20px rgba(42,33,48,.35); }
-.book-page { background: var(--surface); border: 1px solid var(--hairline); left: 4px; right: 2px; transform-origin: left center; transition: transform 500ms cubic-bezier(.3,.6,.2,1); }
+.book-back, .book-page, .book-cover { position: absolute; inset: 0; border-radius: 2px 6px 6px 2px; }
+.book-back { background: #e9dcc4; box-shadow: inset 0 0 0 1px #d9cdb8, 0 14px 20px rgba(42,33,48,.35); transform: translateZ(-14px); }
+/* pages are paper in both themes; a flipped page shows its blank back, so both faces stay visible */
+.book-page { background: #f3ead9; border: 1px solid #d9cdb8; left: 4px; right: 2px; transform-origin: left center; transition: transform 500ms cubic-bezier(.3,.6,.2,1); }
+/* the cover's inside face: an endpaper, so the swung-open cover isn't a mirrored title or a hole */
+.book-cover { backface-visibility: hidden; transform-style: preserve-3d; }
+.book-cover > * { backface-visibility: hidden; }
+.book-cover::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: #e9dcc4; box-shadow: inset 0 0 0 1px #d9cdb8, inset -6px 0 0 var(--copper); transform: rotateY(180deg); backface-visibility: hidden; }
 .book-page.p3 { transform: translateZ(-10px); } .book-page.p2 { transform: translateZ(-6px); } .book-page.p1 { transform: translateZ(-2px); }
 .book-cover { background: var(--aubergine); transform: translateZ(2px); transform-origin: left center; transition: transform 650ms cubic-bezier(.3,.6,.2,1); display: grid; place-content: center; text-align: center; box-shadow: inset 6px 0 0 var(--copper), inset 8px 0 0 color-mix(in srgb, var(--copper) 60%, var(--ink)); }
 .cover-title { color: var(--lamp); font: 400 15px/1.05 var(--font-display); padding-left: 8px; }
@@ -30,11 +35,10 @@
 .book-fly.opened .book-cover { transform: translateZ(2px) rotateY(-178deg); }
 .book-fly.flipped .book-page.p1 { transform: translateZ(-2px) rotateY(-176deg); }
 .book-fly.flipped .book-page.p2 { transform: translateZ(-6px) rotateY(-174deg); transition-delay: 160ms; }
-.book-fly.flipped .book-page.p3 { transform: translateZ(-10px) rotateY(-172deg); transition-delay: 320ms; }
 .book-fly.gone { opacity: 0; }
 
 /* the order rail: a copper bar with three tickets clipped to it */
-.rail { position: relative; padding-top: 18px; }
+.rail { position: relative; padding-top: 18px; margin-top: var(--space-4); }
 .rail-bar { height: 10px; border-radius: 5px; background: var(--copper); box-shadow: 0 3px 0 0 color-mix(in srgb, var(--copper) 70%, var(--ink)); }
 .tickets { list-style: none; margin: 0; padding: 0 var(--space-4); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
 .ticket { position: relative; margin-top: -6px; transform: rotate(var(--tilt)); transform-origin: top center; transition: transform 160ms ease-out; }
@@ -50,7 +54,6 @@
 .ticket.empty .slip-title { color: var(--hairline); }
 
 /* the stove */
-.stove { margin-top: var(--space-6); }
 .stove-svg { display: block; width: 100%; height: auto; }
 .f-sunken { fill: var(--surface-sunken); } .f-raised { fill: var(--surface-raised); } .f-ink { fill: var(--ink); }
 .f-copper { fill: var(--copper); } .f-copper-dark { fill: color-mix(in srgb, var(--copper) 72%, var(--ink)); } .s-copper-dark { stroke: color-mix(in srgb, var(--copper) 60%, var(--ink)); stroke-width: 2; }
@@ -67,16 +70,16 @@
 @media (prefers-reduced-motion: reduce) { .wisp, .flame, .glow { animation: none; } .wisp { opacity: .4; } .book-fly, .book-3d, .book-page, .book-cover { transition: none; } }
 
 /* ===== the open book (browse) ===== */
-.spread { display: grid; grid-template-columns: 1fr 1fr; max-width: 980px; margin: 0 auto; background: var(--surface-raised); border: 1px solid var(--hairline); border-radius: var(--radius-lg); box-shadow: 0 16px 36px rgba(42,33,48,.16); position: relative; }
-.spread::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 40px; margin-left: -20px; background: linear-gradient(to right, transparent, rgba(42,33,48,.10) 48%, rgba(42,33,48,.14) 52%, transparent); pointer-events: none; }
+.spread { display: grid; grid-template-columns: 1fr; max-width: 720px; margin: 0 auto; background: var(--surface-raised); border: 1px solid var(--hairline); border-radius: var(--radius-lg); box-shadow: 0 16px 36px rgba(42,33,48,.16); position: relative; }
 .spread.settle { animation: settle 420ms ease-out; }
 @keyframes settle { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
-.bpage { padding: var(--space-8) var(--space-6); min-width: 0; }
-.bpage.left { border-right: 1px solid var(--hairline); display: grid; gap: var(--space-3); align-content: start; }
+.bpage { padding: var(--space-6); min-width: 0; }
+.bpage.left { border-bottom: 1px solid var(--hairline); display: grid; gap: var(--space-3); align-content: start; }
+.bpage.left .head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
 .bpage.left h2 { margin: 0; color: var(--aubergine); }
 .bpage.left .hint { margin: 0; }
 .bpage .toolbar { margin: 0; }
-.back-to-pass { justify-self: start; margin-top: var(--space-4); }
+.back-to-pass { justify-self: start; }
 .toc { list-style: none; margin: 0; padding: 0; counter-reset: toc; }
 .toc li { padding: var(--space-2) 0; border-bottom: 1px dotted var(--hairline); }
 .toc-row { display: flex; align-items: center; gap: var(--space-2); }
@@ -94,17 +97,14 @@
 .toc-tags { display: block; padding-left: 40px; font: 400 12px/16px var(--font-ticket); color: var(--ink-muted); }
 
 @media (max-width: 600px) {
-  .shelf-row { height: 120px; }
-  .book { width: 76px; height: 102px; right: 28px; }
-  .cover-title { font-size: 12px; }
+  .counter { margin-top: var(--space-4); }
+  .cover-title { font-size: 9px; } .cover-rule { width: 18px; margin-top: 4px; }
+  .counter-label { font-size: 12px; right: auto; left: 81%; top: 60%; transform: translateX(-50%); white-space: nowrap; }
   .tickets { gap: var(--space-2); padding: 0 var(--space-2); }
   .slip { padding: var(--space-2); min-height: 96px; }
   .slip-title { font-size: 13px; line-height: 17px; }
   .slip-head { font-size: 10px; }
-  .spread { grid-template-columns: 1fr; }
-  .spread::before { display: none; }
   .bpage { padding: var(--space-4); }
-  .bpage.left { border-right: 0; border-bottom: 1px solid var(--hairline); }
   .book-fly.to-camera { left: calc(50vw - 100px) !important; top: calc(50vh - 130px) !important; width: 200px !important; height: 260px !important; }
   .book-fly .cover-title { font-size: 26px; }
 }
