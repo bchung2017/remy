@@ -18,7 +18,8 @@ Docker web service.
 - **[Flask](https://flask.palletsprojects.com/)** — JSON API under `/api`, serves `web/` and `brand/tokens.css`
 - **Vanilla HTML/CSS/JS** frontend in `web/` (hash-routed, no bundler), styled from `brand/tokens.css`; notebooks autosave as you type
 - **Installable PWA**: `web/manifest.webmanifest` + `web/sw.js` (network-first shell cache, API never cached)
-- **AI cell**: speech-to-text with the browser's own recognizer (Web Speech API, free) by default, falling back to Groq's Whisper API (`GROQ_API_KEY`, about $0.04 per hour of audio) when the browser has none or it fails; then formatting through the [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) and `claude-haiku-5-5` (`ANTHROPIC_API_KEY`). Anthropic key unset ⇒ `+ AI` is disabled
+- **Voice cell**: speech-to-text with the browser's own recognizer (Web Speech API, free) by default, falling back to Groq's Whisper API (`GROQ_API_KEY`, about $0.04 per hour of audio) when the browser has none or it fails
+- **Recipe tab**: the page's notes become one clean recipe through the [Anthropic SDK](https://github.com/anthropics/anthropic-sdk-python) and `claude-haiku-5-5` (`ANTHROPIC_API_KEY`); key unset ⇒ Generate and Fix are disabled
 - **[Flask-SQLAlchemy](https://flask-sqlalchemy.palletsprojects.com/)** over **SQLite** by default
 - **Postgres/Supabase** when `DATABASE_URL` is set, pinned to `DB_SCHEMA`
   (the `stackify-v1` no-collision schema pattern)
@@ -73,10 +74,10 @@ cd backend
 python reset_db.py --yes
 ```
 
-### Cells, images, and the AI cell
+### Cells, images, and the Voice cell
 
 A recipe's `blocks` is the ordered cell list as JSON. `body` is derived from
-the text of text and AI cells, so search and list previews keep working.
+the text of text and voice cells, so search and list previews keep working.
 
 Cells are raw notes; nothing formats them individually, the Recipe tab does
 that for the whole page. While a cell's text is focused a `✓ Done` button
@@ -89,7 +90,7 @@ ticked cell was one, keeping their transcripts.
 
 Each page opens on the **Recipe** tab (a brand-new page opens on Notes,
 where you add content). **Notes** is the cell notebook. **Recipe** is the
-one clean recipe: `✦ Generate from notes` sends every text and AI cell, in
+one clean recipe: `✦ Generate from notes` sends every text and voice cell, in
 order, to `POST /api/recipes/:id/compile`, which asks `claude-haiku-5-5` to
 merge them (later notes win on conflicts, repetition removed, nothing
 invented) and stores the result in `compiled`. The compiled recipe is
@@ -104,7 +105,7 @@ it) and `✦ Fix` sends the full text, the span and the instruction to
 `POST /api/recipes/revise`, which returns a replacement for that span only.
 Search covers the compiled recipe too.
 
-In the notebook: `+ Text`, `+ Image`, `+ AI` insert after the selected cell
+In the notebook: `+ Text`, `+ Image`, `+ Voice` insert after the selected cell
 (or at the end). A selected cell takes ↑ ↓ and `× cell` from the toolbar or
 its own hover tools. With a cell selected and no field focused: `j`/`k` or
 the arrow keys move the selection, Shift+arrow moves the cell, `Enter` edits,
