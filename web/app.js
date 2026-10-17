@@ -262,15 +262,13 @@ function md(src) {
 }
 
 // ---------- notebook page (Jupyter-style cells) ----------
-let draftOn = false;   // set from /api/health before cells render; shows Format on text cells
-const TYPE_LABEL = { text: "Text", image: "Image", ai: "AI" };
+const TYPE_LABEL = { text: "Text", image: "Image", ai: "Voice" };   // "ai" stays the stored type for old pages
 
 function cellHtml(b, n) {
-  const gutter = `<div class="gutter"><span class="kind">${TYPE_LABEL[b.type] || "AI"}</span><span class="num">[${n}]</span></div>`;
+  const gutter = `<div class="gutter"><span class="kind">${TYPE_LABEL[b.type] || "Voice"}</span><span class="num">[${n}]</span></div>`;
   const tools = `<div class="cell-tools">
       <button data-act="up" title="Move up" aria-label="Move up">↑</button>
       <button data-act="down" title="Move down" aria-label="Move down">↓</button>
-      <button data-act="merge" title="Merge with the cell below" aria-label="Merge with the cell below">⤵</button>
       <button data-act="del" title="Delete cell" aria-label="Delete cell">×</button>
     </div>`;
   let body;
@@ -284,19 +282,18 @@ function cellHtml(b, n) {
       <div class="ai-row">
         <button class="btn btn-sm dictate" ${(SR || b.voice) ? "" : 'disabled title="No speech recognition in this browser; set GROQ_API_KEY for cloud transcription"'}>● Dictate</button>
         <span class="hint ai-note"></span>
-        <button class="btn btn-sm btn-primary run" disabled>✦ Format</button>
+        <button class="btn btn-sm btn-primary run" disabled>✓ Add note</button>
       </div>
-      <textarea class="transcript" rows="1" placeholder="Say the recipe the way you'd tell a friend. Edit here before running." aria-label="Transcript"></textarea>
-    </div>
-    <div class="cell-out hint" hidden></div>`;
+      <textarea class="transcript" rows="1" placeholder="Say the recipe the way you'd tell a friend. Edit here, then add it as a note." aria-label="Transcript"></textarea>
+    </div>`;
   else if (b.type === "ai") body = `
-    <div class="cell-in ai-in"><details class="transcript-view"><summary class="hint">Transcript</summary><p>${esc(b.transcript)}</p></details></div>
-    <div class="cell-out"><textarea class="text" rows="1" aria-label="Formatted recipe">${esc(b.text)}</textarea></div>
-    ${draftOn ? `<div class="cell-foot"><button class="btn btn-sm btn-ghost fmt" type="button" title="Format this text again with Claude" ${b.text.trim() ? "" : "disabled"}>✦ Format</button></div>` : ""}`;
+    <div class="cell-in"><textarea class="text" rows="1" aria-label="Voice note">${esc(b.text)}</textarea></div>
+    <div class="cell-foot"><button class="btn btn-sm btn-primary done-edit" type="button">✓ Done</button></div>`;
   else body = `
     <div class="cell-in"><textarea class="text" rows="1" placeholder="Write here, or paste a recipe dump" aria-label="Text">${esc(b.text)}</textarea></div>
-    ${draftOn ? `<div class="cell-foot"><button class="btn btn-sm btn-ghost fmt" type="button" title="Tidy this text into ingredients and steps with Claude" ${b.text.trim() ? "" : "disabled"}>✦ Format</button></div>` : ""}`;
-  return `<section class="cell cell-${b.type} ${b.draft ? "draft" : ""}" data-id="${esc(b.id)}" data-type="${b.type}" tabindex="-1">${gutter}<div class="cell-body">${body}</div>${tools}</section>`;
+    <div class="cell-foot"><button class="btn btn-sm btn-primary done-edit" type="button">✓ Done</button></div>`;
+  const pick = b.draft || b.type === "image" ? "" : `<label class="pick" hidden><input type="checkbox" class="pick-box" aria-label="Select cell to merge"></label>`;
+  return `<section class="cell cell-${b.type} ${b.draft ? "draft" : ""}" data-id="${esc(b.id)}" data-type="${b.type}" tabindex="-1">${pick}${gutter}<div class="cell-body">${body}</div>${tools}</section>`;
 }
 
 const grow = (ta) => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; };
@@ -315,10 +312,10 @@ async function shrinkImage(file) {
   return blob ? new File([blob], (file.name || "photo").replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" }) : file;
 }
 
-async function renderRecipe(id, tab = "notes") {
+async function renderRecipe(id, tab = "recipe") {
   let r;
   try { r = await api.get(id); } catch { view.innerHTML = `<p class="empty">Not found. <a href="#/">Back</a></p>`; return; }
-  const h = await health; draftOn = !!h.draft;
+  const h = await health;
   let saveTimer, saving = Promise.resolve();
 
   view.innerHTML = `
@@ -331,8 +328,8 @@ async function renderRecipe(id, tab = "notes") {
         </div>
       </header>
       <nav class="tabs" role="tablist">
-        <a class="tab ${tab === "notes" ? "on" : ""}" role="tab" href="#/r/${id}">Notes</a>
-        <a class="tab ${tab === "recipe" ? "on" : ""}" role="tab" href="#/r/${id}/recipe">Recipe${r.compiled ? "" : " ·"}</a>
+        <a class="tab ${tab === "recipe" ? "on" : ""}" role="tab" href="#/r/${id}">Recipe${r.compiled ? "" : " ·"}</a>
+        <a class="tab ${tab === "notes" ? "on" : ""}" role="tab" href="#/r/${id}/notes">Notes</a>
       </nav>
       <section id="pane-recipe" ${tab === "recipe" ? "" : "hidden"}>
         <div class="nb-toolbar" role="toolbar" aria-label="Recipe">
@@ -341,6 +338,7 @@ async function renderRecipe(id, tab = "notes") {
           <span class="hint" id="compile-hint">${r.compiled ? "Reads every text and AI cell and rewrites this. Your edits here are replaced." : "Reads every text and AI cell and writes one clean recipe here."}</span>
         </div>
         <article class="rendered" id="rendered" ${r.compiled ? "" : "hidden"}><h1 class="rendered-title">${esc(r.title)}</h1>${md(r.compiled)}</article>
+        <p class="hint empty-recipe" ${r.compiled || r.blocks.some((b) => b.type !== "image") ? "hidden" : ""}>No notes yet. <a href="#/r/${id}/notes">Add notes</a> (type, dictate, or photograph), then generate the recipe here.</p>
         <textarea class="compiled" id="compiled" rows="1" ${r.compiled ? "hidden" : ""} placeholder="Nothing here yet. Generate from your notes, or write the recipe directly (markdown: ## headings, - ingredients, 1. steps)." aria-label="Recipe">${esc(r.compiled)}</textarea>
         <p class="hint" id="edit-hint" ${r.compiled ? "" : "hidden"}>Press Edit to change the text; highlight any part while editing to fix just that part.</p>
         <div class="fixbar" id="fixbar" hidden>
@@ -355,12 +353,17 @@ async function renderRecipe(id, tab = "notes") {
         <button class="btn btn-sm" data-add="text">+ Text</button>
         <label class="btn btn-sm" for="add-image">+ Image</label>
         <input id="add-image" type="file" accept="image/*" hidden>
-        ${h.draft ? `<button class="btn btn-sm" data-add="ai">+ AI</button>` : `<button class="btn btn-sm" disabled title="Set ANTHROPIC_API_KEY to enable">+ AI</button>`}
+        <button class="btn btn-sm" data-add="ai">+ Voice</button>
         <span class="sep"></span>
         <button class="btn btn-sm btn-ghost" id="t-up" title="Move cell up">↑</button>
         <button class="btn btn-sm btn-ghost" id="t-down" title="Move cell down">↓</button>
-        <button class="btn btn-sm btn-ghost" id="t-merge" title="Merge the selected cell with the one below">⤵ merge</button>
+        <button class="btn btn-sm btn-ghost" id="t-merge" title="Combine several text or voice cells into one">⤵ Merge…</button>
         <button class="btn btn-sm btn-ghost" id="t-del" title="Delete cell">× cell</button>
+      </div>
+      <div class="mergebar" id="mergebar" hidden>
+        <span id="mergecount">Tick the text or voice cells to combine, in any order. They merge in page order.</span>
+        <button class="btn btn-sm btn-primary" id="merge-go" disabled>Merge</button>
+        <button class="btn btn-sm btn-ghost" id="merge-cancel">Cancel</button>
       </div>
       <div class="cells" id="cells">${r.blocks.map((b, i) => cellHtml(b, i + 1)).join("")}</div>
       <p class="empty" id="nocells" ${r.blocks.length ? "hidden" : ""}>Empty notebook. Add a cell above.</p>
@@ -415,23 +418,50 @@ async function renderRecipe(id, tab = "notes") {
     dir < 0 ? sib.before(el) : sib.after(el);
     renumber(); el.focus({ preventScroll: true }); el.scrollIntoView({ block: "nearest" }); save();
   };
-  // merge a text/AI cell into the one below it (images can't merge); result is a text cell
-  // unless both are AI, in which case the transcripts are joined too
-  const mergeable = (a, b) => a && b && ["text", "ai"].includes(a.dataset.type) && ["text", "ai"].includes(b.dataset.type) && !a.classList.contains("draft") && !b.classList.contains("draft");
-  const merge = (el) => {
-    const below = el?.nextElementSibling;
-    if (!mergeable(el, below)) { err("Only text and AI cells can merge, and the cell needs a text or AI cell below it."); return; }
-    const txt = (c) => c.querySelector("textarea.text").value.trim();
-    const joined = [txt(el), txt(below)].filter(Boolean).join("\n\n");
-    const both = el.dataset.type === "ai" && below.dataset.type === "ai";
-    const blk = both
-      ? { id: uid(), type: "ai", text: joined, transcript: [transcripts[el.dataset.id], transcripts[below.dataset.id]].filter(Boolean).join(" ") }
-      : { id: uid(), type: "text", text: joined };
-    if (both) transcripts[blk.id] = blk.transcript;
-    el.insertAdjacentHTML("beforebegin", cellHtml(blk, 0));
-    const merged = el.previousElementSibling; wire(merged); el.remove(); below.remove();
-    renumber(); select(merged); merged.focus({ preventScroll: true }); err(""); save();
+  // merge: a deliberate flow. "Merge…" enters a selection mode, 2+ text/AI cells are ticked,
+  // a modal shows the combined text and warns it can't be undone, then one cell replaces them.
+  const mergebar = view.querySelector("#mergebar"), mergeGo = view.querySelector("#merge-go"), mergeCount = view.querySelector("#mergecount");
+  const picked = () => [...cellsEl.querySelectorAll(".pick-box:checked")].map((c) => c.closest(".cell"));
+  const mergeMode = (on) => {
+    view.querySelector(".nb").classList.toggle("merging", on); mergebar.hidden = !on;
+    cellsEl.querySelectorAll(".pick").forEach((l) => { l.hidden = !on; l.querySelector("input").checked = false; });
+    mergeGo.disabled = true; mergeCount.textContent = "Tick the text or voice cells to combine, in any order. They merge in page order.";
+    if (on) err("");
   };
+  cellsEl.addEventListener("change", (e) => {
+    if (!e.target.classList.contains("pick-box")) return;
+    const n = picked().length; mergeGo.disabled = n < 2;
+    mergeCount.textContent = n < 2 ? "Tick at least two text or voice cells." : `${n} cells selected. They merge in page order into one cell.`;
+  });
+  const txt = (c) => c.querySelector("textarea.text").value.trim();
+  mergeGo.addEventListener("click", () => {
+    const cells = picked(); if (cells.length < 2) return;
+    const joined = cells.map(txt).filter(Boolean).join("\n\n");
+    const allAi = cells.every((c) => c.dataset.type === "ai");
+    const modal = document.createElement("div");
+    modal.className = "modal"; modal.setAttribute("role", "dialog"); modal.setAttribute("aria-modal", "true"); modal.setAttribute("aria-label", "Merge cells");
+    modal.innerHTML = `<div class="modal-card">
+        <h2 class="display-md">Merge ${cells.length} cells?</h2>
+        <p class="hint">Cells ${cells.map((c) => c.querySelector(".num").textContent).join(", ")} become one ${allAi ? "voice" : "text"} cell with this text. <strong>This can't be undone.</strong></p>
+        <pre class="modal-preview">${esc(joined)}</pre>
+        <div class="modal-actions"><button class="btn btn-ghost" id="modal-no">Keep them separate</button><button class="btn btn-danger" id="modal-yes">Merge ${cells.length} cells</button></div>
+      </div>`;
+    document.body.appendChild(modal); document.body.classList.add("rec-open");
+    const close = () => { modal.remove(); document.body.classList.remove("rec-open"); };
+    modal.querySelector("#modal-no").addEventListener("click", () => { close(); mergeGo.focus(); });
+    modal.addEventListener("keydown", (e) => { if (e.key === "Escape") { close(); mergeGo.focus(); } });
+    modal.querySelector("#modal-yes").addEventListener("click", () => {
+      const blk = allAi
+        ? { id: uid(), type: "ai", text: joined, transcript: cells.map((c) => transcripts[c.dataset.id] || "").filter(Boolean).join(" ") }
+        : { id: uid(), type: "text", text: joined };
+      if (allAi) transcripts[blk.id] = blk.transcript;
+      cells[0].insertAdjacentHTML("beforebegin", cellHtml(blk, 0));
+      const merged = cells[0].previousElementSibling; wire(merged); cells.forEach((c) => c.remove());
+      close(); mergeMode(false); renumber(); select(merged); merged.focus({ preventScroll: true }); save();
+    });
+    modal.querySelector("#modal-no").focus();
+  });
+  view.querySelector("#merge-cancel").addEventListener("click", () => mergeMode(false));
   const remove = (el) => {
     if (!el) return;
     const next = el.nextElementSibling || el.previousElementSibling;
@@ -446,26 +476,11 @@ async function renderRecipe(id, tab = "notes") {
     el.querySelectorAll(".cell-tools button").forEach((b) => b.addEventListener("click", (e) => {
       e.stopPropagation();
       const act = b.dataset.act;
-      if (act === "up") move(el, -1); else if (act === "down") move(el, 1); else if (act === "merge") merge(el); else remove(el);
+      if (act === "up") move(el, -1); else if (act === "down") move(el, 1); else remove(el);
     }));
-    const fmt = el.querySelector(".fmt");
-    if (fmt) {
-      const ta = el.querySelector("textarea.text");
-      ta.addEventListener("input", () => { fmt.disabled = !ta.value.trim(); });
-      fmt.addEventListener("click", async () => {
-        const text = ta.value.trim(); if (!text) return;
-        fmt.disabled = true; fmt.textContent = "Formatting…"; err("");
-        const title = view.querySelector("#title").value.trim();
-        try {
-          const d = await api.draft({ transcript: text, title: title === "Untitled" ? "" : title });
-          ta.value = d.body; grow(ta);
-          if (!title || title === "Untitled") view.querySelector("#title").value = d.title;
-          if (!view.querySelector("#tags").value.trim()) view.querySelector("#tags").value = d.tags.join(", ");
-          await save();
-        } catch (ex) { err(ex.message); }
-        fmt.textContent = "✦ Format"; fmt.disabled = !ta.value.trim();
-      });
-    }
+    const doneBtn = el.querySelector(".done-edit");
+    if (doneBtn) doneBtn.addEventListener("click", () => { el.querySelector("textarea.text").blur(); el.classList.remove("editing"); save(); select(el); el.focus({ preventScroll: true }); });
+    el.querySelectorAll("textarea.text").forEach((ta) => { ta.addEventListener("focus", () => el.classList.add("editing")); ta.addEventListener("blur", () => setTimeout(() => { if (!el.contains(document.activeElement)) el.classList.remove("editing"); }, 0)); });
     const run = el.querySelector(".run");
     if (run) {
       const ta = el.querySelector(".transcript"), out = el.querySelector(".cell-out"), mic = el.querySelector(".dictate"), note = el.querySelector(".ai-note");
@@ -477,25 +492,16 @@ async function renderRecipe(id, tab = "notes") {
         startDictation({
           groq: !!h.voice,
           onText: (t) => { ta.value = (ta.value.trimEnd() + " " + t).trim(); refresh(); },
-          onDone: (ok) => { mic.disabled = false; if (!ok) ta.value = before; refresh(); if (ok && ta.value.trim()) note.textContent = "Edit if needed, then Format."; (ok ? run : ta).focus(); },
+          onDone: (ok) => { mic.disabled = false; if (!ok) ta.value = before; refresh(); if (ok && ta.value.trim()) note.textContent = "Edit if needed, then add it."; (ok ? run : ta).focus(); },
         });
       });
       run.addEventListener("click", async () => {
         const transcript = ta.value.trim(); if (!transcript) return;
-        run.disabled = true; run.textContent = "Formatting…"; out.hidden = false; out.textContent = "Formatting with Claude…"; err("");
-        const title = view.querySelector("#title").value.trim();
-        try {
-          const d = await api.draft({ transcript, title: title === "Untitled" ? "" : title });
-          const blk = { id: uid(), type: "ai", text: d.body, transcript };
-          transcripts[blk.id] = transcript;
-          el.insertAdjacentHTML("afterend", cellHtml(blk, 0));
-          const real = el.nextElementSibling; wire(real); el.remove(); renumber(); select(real);
-          if (!title || title === "Untitled") view.querySelector("#title").value = d.title;
-          if (!view.querySelector("#tags").value.trim()) view.querySelector("#tags").value = d.tags.join(", ");
-          await save();
-        } catch (ex) {
-          err(ex.message); out.textContent = "Failed: " + ex.message; run.disabled = false; run.textContent = "✦ Format";
-        }
+        const blk = { id: uid(), type: "ai", text: transcript, transcript };
+        transcripts[blk.id] = transcript;
+        el.insertAdjacentHTML("afterend", cellHtml(blk, 0));
+        const real = el.nextElementSibling; wire(real); el.remove(); renumber(); select(real);
+        await save();
       });
     }
   };
@@ -528,7 +534,11 @@ async function renderRecipe(id, tab = "notes") {
   view.querySelector("#t-up").addEventListener("click", () => move(selected, -1));
   view.querySelector("#t-down").addEventListener("click", () => move(selected, 1));
   view.querySelector("#t-del").addEventListener("click", () => remove(selected));
-  view.querySelector("#t-merge").addEventListener("click", () => { if (selected) merge(selected); else err("Select a cell first."); });
+  view.querySelector("#t-merge").addEventListener("click", () => {
+    const n = cellsEl.querySelectorAll(".pick").length;
+    if (n < 2) { err("Merging needs at least two text or voice cells."); return; }
+    mergeMode(!view.querySelector(".nb").classList.contains("merging"));
+  });
 
   // keyboard: with a cell selected and no field focused, j/k or arrows move selection, shift+arrows move the cell, d deletes
   view.querySelector(".nb").addEventListener("keydown", (e) => {
@@ -539,7 +549,6 @@ async function renderRecipe(id, tab = "notes") {
     else if (e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); e.shiftKey ? move(selected, 1) : (selected.nextElementSibling && (select(selected.nextElementSibling), selected.focus())); }
     else if (e.key === "Enter") { e.preventDefault(); (selected.querySelector("textarea, input.caption") || selected).focus(); }
     else if (e.key === "d" || e.key === "Delete") { e.preventDefault(); remove(selected); }
-    else if (e.key === "m") { e.preventDefault(); merge(selected); }
   });
 
   // --- Recipe tab: the compiled recipe, generate/regenerate, highlight-and-fix ---
@@ -555,6 +564,7 @@ async function renderRecipe(id, tab = "notes") {
   compiledEl.addEventListener("input", () => { grow(compiledEl); saveSoon(); });
   compiledEl.addEventListener("blur", () => { setTimeout(() => { if (!fixbar.contains(document.activeElement)) save(); }, 0); });
   view.querySelectorAll(".tab").forEach((a) => a.addEventListener("click", () => { clearTimeout(saveTimer); save(); }));
+  view.querySelector("#pane-recipe").addEventListener("click", (e) => { if (e.target.closest(".empty-recipe a")) { e.preventDefault(); location.hash = `#/r/${id}/notes`; } });
   const compileBtn = view.querySelector("#compile");
   if (compileBtn) compileBtn.addEventListener("click", async () => {
     compileBtn.disabled = true; const was = compileBtn.textContent; compileBtn.textContent = "✦ Reading your notes…"; err("");
@@ -614,7 +624,7 @@ async function renderRecipe(id, tab = "notes") {
 
 async function newRecipe() {
   const r = await api.create({});
-  location.replace("#/r/" + r.id);
+  location.replace("#/r/" + r.id + "/notes");   // a fresh page starts where you add notes
 }
 
 function route() {
@@ -622,7 +632,7 @@ function route() {
   let m;
   if (h === "#/" || h === "#") return renderBrowse();
   if (h === "#/new") return newRecipe();
-  if ((m = h.match(/^#\/r\/(\d+)(\/recipe)?$/))) return renderRecipe(m[1], m[2] ? "recipe" : "notes");
+  if ((m = h.match(/^#\/r\/(\d+)(\/notes|\/recipe)?$/))) return renderRecipe(m[1], m[2] === "/notes" ? "notes" : "recipe");
   location.hash = "#/";
 }
 window.addEventListener("hashchange", route);
