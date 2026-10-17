@@ -71,7 +71,7 @@ const bookHtml = () => `
   </div>`;
 
 async function renderHome() {
-  const [starred, recipes] = await Promise.all([api.list({ starred: 1, sort: "starred" }), api.list({})]);
+  const starred = await api.list({ starred: 1, sort: "starred" });
   const top = [starred[0], starred[1], starred[2]];
   view.innerHTML = `
     <section class="pass" aria-label="The pass">
@@ -81,7 +81,6 @@ async function renderHome() {
       </div>
       <div class="counter">
         ${STOVE_SVG}
-        <a class="counter-label" href="#/book">All ${recipes.length} recipe${recipes.length === 1 ? "" : "s"}</a>
         <button class="book" id="book" aria-label="Open the cookbook: all recipes">${bookHtml()}</button>
       </div>
     </section>`;

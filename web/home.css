@@ -7,12 +7,12 @@
 .counter { position: relative; margin-top: var(--space-6); perspective: 900px; }
 .book { position: absolute; left: 75.5%; bottom: 58.3%; width: 11%; aspect-ratio: 3 / 4; padding: 0; border: 0; background: transparent; cursor: pointer; perspective: 900px; }
 .book:focus-visible { outline: 2px solid var(--copper); outline-offset: 6px; border-radius: var(--radius-sm); }
-.counter-label { position: absolute; right: 4.5%; top: 7%; color: var(--ink-muted); font: 500 14px/20px var(--font-ticket); text-decoration: none; }
-.counter-label:hover { color: var(--copper); }
 
 /* the 3D book: pages stacked under a cover that swings on its spine */
-.book-3d { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transform: rotateX(58deg) rotateZ(-14deg) translateZ(0); transition: transform 750ms cubic-bezier(.2,.7,.2,1); }
-.book:hover .book-3d { transform: rotateX(50deg) rotateZ(-10deg) translateZ(8px); }
+.book-3d { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transform-origin: 50% 100%; transform: rotateX(16deg) rotateY(-12deg); transition: transform 750ms cubic-bezier(.2,.7,.2,1); }
+.book:hover .book-3d { transform: rotateX(10deg) rotateY(-8deg); }
+/* the book's footprint on the worktop */
+.book::after { content: ""; position: absolute; left: 6%; right: -4%; bottom: -3px; height: 8px; border-radius: 50%; background: rgba(42,33,48,.35); filter: blur(3px); }
 .book-back, .book-page, .book-cover { position: absolute; inset: 0; border-radius: 2px 6px 6px 2px; }
 .book-back { background: #e9dcc4; box-shadow: inset 0 0 0 1px #d9cdb8, 0 14px 20px rgba(42,33,48,.35); transform: translateZ(-14px); }
 /* pages are paper in both themes; a flipped page shows its blank back, so both faces stay visible */
@@ -28,7 +28,7 @@
 
 /* flight: a fixed clone lifts to the centre, faces the camera, opens, flips */
 .book-fly { position: fixed; z-index: 70; perspective: 1100px; transition: left 750ms cubic-bezier(.2,.7,.2,1), top 750ms cubic-bezier(.2,.7,.2,1), width 750ms cubic-bezier(.2,.7,.2,1), height 750ms cubic-bezier(.2,.7,.2,1), opacity 300ms ease-out; }
-.book-fly .book-3d { transform: rotateX(58deg) rotateZ(-14deg); }
+.book-fly .book-3d { transform: rotateX(16deg) rotateY(-12deg); }
 .book-fly .cover-title { font-size: 34px; } .book-fly .cover-rule { width: 56px; height: 3px; }
 .book-fly.to-camera { left: calc(50vw - 130px) !important; top: calc(50vh - 170px) !important; width: 260px !important; height: 340px !important; }
 .book-fly.to-camera .book-3d { transform: rotateX(0) rotateZ(0); }
@@ -99,7 +99,6 @@
 @media (max-width: 600px) {
   .counter { margin-top: var(--space-4); }
   .cover-title { font-size: 9px; } .cover-rule { width: 18px; margin-top: 4px; }
-  .counter-label { font-size: 12px; right: auto; left: 81%; top: 60%; transform: translateX(-50%); white-space: nowrap; }
   .tickets { gap: var(--space-2); padding: 0 var(--space-2); }
   .slip { padding: var(--space-2); min-height: 96px; }
   .slip-title { font-size: 13px; line-height: 17px; }
