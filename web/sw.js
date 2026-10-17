@@ -1,7 +1,7 @@
 // remy service worker: makes the app installable and lets the shell open offline.
 // Shell: network-first, cache fallback (so a deploy is picked up on the next load).
 // API: network only. Bump CACHE when the shell's file list changes.
-const CACHE = "remy-shell-v21";
+const CACHE = "remy-shell-v22";
 const SHELL = ["/", "/app.css", "/app.js", "/home.css", "/home.js", "/tokens.css", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
