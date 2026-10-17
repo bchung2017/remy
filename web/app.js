@@ -205,12 +205,11 @@ const saveBrowse = () => { try { sessionStorage.setItem("remy.browse", JSON.stri
 function listHtml(recipes) {
   if (!recipes.length) return `<p class="empty">${browse.q || browse.tag ? "No matches." : "No recipes yet."}</p>`;
   return `<ul class="list">${recipes.map((r) => {
-    const img = r.blocks.find((b) => b.type === "image");
+    const img = r.blocks.find((b) => b.type === "image");   // first photo on the page, in cell order
     return `<li><a class="card" href="#/r/${r.id}">
-      ${img ? `<img class="thumb" src="/api/assets/${esc(img.asset)}" alt="">` : ""}
+      ${img ? `<img class="thumb" src="/api/assets/${esc(img.asset)}" alt="" loading="lazy">` : `<span class="thumb thumb-empty" aria-hidden="true"></span>`}
       <div class="card-text">
         <h3>${esc(r.title)}</h3>
-        ${r.body ? `<p>${esc(r.body.slice(0, 240))}</p>` : ""}
         <div class="meta"><span>${when(r.updatedAt)}</span>${r.tags.map((t) => `<span>#${esc(t)}</span>`).join("")}</div>
       </div></a></li>`; }).join("")}</ul>`;
 }

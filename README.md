@@ -6,7 +6,8 @@ Jupyter-style notebook of numbered cells you insert, move, merge and delete
 from a toolbar. Three cell types: **Text**, **Image** (photo upload, stored
 in the database), and **Voice** (dictate with the browser's speech
 recognition or, when that's missing, Groq; the transcript becomes the note).
-Browse, search, filter by tag, sort, delete.
+Browse (each row shows the page's first photo, or an empty plate), search,
+filter by tag, sort, delete.
 
 A **Flask + SQLite** JSON API plus a no-build static frontend, swapping to
 **Postgres/Supabase** via `DATABASE_URL`, isolated in its own schema so it can
