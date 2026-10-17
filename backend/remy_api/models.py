@@ -9,6 +9,7 @@ Block shapes (all carry a client-or-server-assigned `id`):
 `body` is derived from the text of text/ai blocks so search and list previews
 stay cheap; it is never written directly once blocks exist.
 """
+import hashlib
 import json
 import uuid
 from datetime import datetime, timezone
@@ -72,6 +73,7 @@ class Recipe(db.Model):
     blocks = db.Column(db.Text, nullable=False, default="[]")      # JSON list, see module doc
     body = db.Column(db.Text, nullable=False, default="")          # derived: text of all text/ai blocks
     compiled = db.Column(db.Text, nullable=False, default="")      # the one clean recipe built from the cells (Recipe tab)
+    compiled_hash = db.Column(db.String(64), nullable=False, default="")   # hash of the notes the recipe was generated from
     tags = db.Column(db.String(400), nullable=False, default="")  # ",a,b," — padded for LIKE matching
     created_at = db.Column(db.DateTime, nullable=False, default=_utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
@@ -108,12 +110,21 @@ class Recipe(db.Model):
         self.blocks = json.dumps(blocks)
         self.body = blocks_text(blocks)
 
+    def notes_hash(self) -> str:
+        """Fingerprint of what Generate reads: the text of text/voice cells, in order."""
+        return hashlib.sha256(self.body.encode("utf-8")).hexdigest()
+
+    def notes_changed(self) -> bool:
+        """True when there is a generated recipe and the notes differ from what it was built from."""
+        return bool(self.compiled) and self.notes_hash() != (self.compiled_hash or "")
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
             "title": self.title,
             "body": self.body,
             "compiled": self.compiled or "",
+            "notesChanged": self.notes_changed(),
             "blocks": self.block_list(),
             "tags": self.tag_list(),
             "createdAt": self.created_at.isoformat() if self.created_at else None,

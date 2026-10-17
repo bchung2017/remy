@@ -90,7 +90,11 @@ ticked cell was one, keeping their transcripts.
 
 Each page opens on the **Recipe** tab (a brand-new page opens on Notes,
 where you add content). **Notes** is the cell notebook. **Recipe** is the
-one clean recipe: `✦ Generate from notes` sends every text and voice cell, in
+one clean recipe. `✦ Generate from notes` appears before the first
+generation and again only when a note has changed since the last one (the
+server stores a hash of the notes it read, and every recipe response carries
+`notesChanged`); while the recipe is current the button is absent and that
+absence is the signal. It sends every text and voice cell, in
 order, to `POST /api/recipes/:id/compile`, which asks `claude-haiku-5-5` to
 merge them (later notes win on conflicts, repetition removed, nothing
 invented) and stores the result in `compiled`. The compiled recipe is

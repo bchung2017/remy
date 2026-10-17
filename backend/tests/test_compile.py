@@ -51,6 +51,24 @@ class Compile(unittest.TestCase):
         self.assertNotIn("Title hint", user)                   # untitled: no hint
         self.assertEqual(self.c.get(f"/api/recipes/{self.rid}").get_json()["compiled"], draft.body)   # persisted
 
+    def test_notes_changed_flag_tracks_generation(self):
+        from remy_api.llm import Draft
+        self.c.put(f"/api/recipes/{self.rid}", json={"blocks": [{"id": "a", "type": "text", "text": "garlic"}]})
+        self.assertFalse(self.c.get(f"/api/recipes/{self.rid}").get_json()["notesChanged"])   # nothing generated yet
+        with mock.patch("remy_api.llm._run", return_value=ok(Draft(title="t", body="b", tags=[]))):
+            rec = self.c.post(f"/api/recipes/{self.rid}/compile").get_json()
+        self.assertFalse(rec["notesChanged"])                                                    # fresh
+        rec = self.c.put(f"/api/recipes/{self.rid}", json={"compiled": "b edited"}).get_json()
+        self.assertFalse(rec["notesChanged"])                                                    # editing the recipe itself doesn't count
+        rec = self.c.put(f"/api/recipes/{self.rid}", json={"blocks": [{"id": "a", "type": "text", "text": "garlic and salt"}]}).get_json()
+        self.assertTrue(rec["notesChanged"])                                                     # a note changed
+        rec = self.c.put(f"/api/recipes/{self.rid}", json={"blocks": [{"id": "a", "type": "text", "text": "garlic"}, {"type": "image", "asset": "x"}]}).get_json()
+        self.assertFalse(rec["notesChanged"])                                                    # back to the same text; an image doesn't count
+        with mock.patch("remy_api.llm._run", return_value=ok(Draft(title="t", body="b2", tags=[]))):
+            self.c.put(f"/api/recipes/{self.rid}", json={"blocks": [{"id": "a", "type": "text", "text": "new"}]})
+            rec = self.c.post(f"/api/recipes/{self.rid}/compile").get_json()
+        self.assertFalse(rec["notesChanged"])                                                    # regenerated: fresh again
+
     def test_keeps_existing_title_and_passes_hint(self):
         from remy_api.llm import Draft
         self.c.put(f"/api/recipes/{self.rid}", json={"title": "Mom's aioli", "tags": ["family"], "blocks": [{"type": "text", "text": "x"}]})

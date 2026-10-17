@@ -333,9 +333,11 @@ async function renderRecipe(id, tab = "recipe") {
       </nav>
       <section id="pane-recipe" ${tab === "recipe" ? "" : "hidden"}>
         <div class="nb-toolbar" role="toolbar" aria-label="Recipe">
-          ${h.draft ? `<button class="btn btn-sm btn-primary" id="compile">✦ ${r.compiled ? "Regenerate" : "Generate"} from notes</button>` : `<button class="btn btn-sm" disabled title="Set ANTHROPIC_API_KEY to enable">✦ Generate from notes</button>`}
           <button class="btn btn-sm" id="edit-toggle">${r.compiled ? "Edit" : "Done editing"}</button>
-          <span class="hint" id="compile-hint">${r.compiled ? "Reads every text and AI cell and rewrites this. Your edits here are replaced." : "Reads every text and AI cell and writes one clean recipe here."}</span>
+          <span id="gen" hidden>
+            ${h.draft ? `<button class="btn btn-sm btn-primary" id="compile">✦ Generate from notes</button>` : `<button class="btn btn-sm" id="compile" disabled title="Set ANTHROPIC_API_KEY to enable">✦ Generate from notes</button>`}
+            <span class="hint" id="compile-hint"></span>
+          </span>
         </div>
         <article class="rendered" id="rendered" ${r.compiled ? "" : "hidden"}><h1 class="rendered-title">${esc(r.title)}</h1>${md(r.compiled)}</article>
         <p class="hint empty-recipe" ${r.compiled || r.blocks.some((b) => b.type !== "image") ? "hidden" : ""}>No notes yet. <a href="#/r/${id}/notes">Add notes</a> (type, dictate, or photograph), then generate the recipe here.</p>
@@ -398,7 +400,7 @@ async function renderRecipe(id, tab = "recipe") {
     saving = saving.then(async () => {
       try {
         r = await api.update(id, { title: view.querySelector("#title").value, tags: view.querySelector("#tags").value, blocks: readBlocks(), compiled: view.querySelector("#compiled").value });
-        status.textContent = "Saved"; err("");
+        status.textContent = "Saved"; err(""); setStale(r);
       } catch (e) { status.textContent = "Not saved"; err(e.message); }
     });
     return saving;
@@ -553,6 +555,16 @@ async function renderRecipe(id, tab = "recipe") {
 
   // --- Recipe tab: the compiled recipe, generate/regenerate, highlight-and-fix ---
   const compiledEl = view.querySelector("#compiled"), renderedEl = view.querySelector("#rendered"), editToggle = view.querySelector("#edit-toggle");
+  const compileBtn = view.querySelector("#compile");
+  // The Generate button is the only signal: shown before the first generation and whenever the
+  // notes changed since the last one; hidden while the recipe is current.
+  const genWrap = view.querySelector("#gen");
+  const setStale = (rec) => {
+    const show = !rec.compiled || !!rec.notesChanged;
+    genWrap.hidden = !show;
+    if (compileBtn && !compileBtn.disabled) compileBtn.textContent = rec.compiled ? "✦ Regenerate from notes" : "✦ Generate from notes";
+    view.querySelector("#compile-hint").textContent = rec.compiled ? "Your notes changed. Regenerating reads every text and voice cell and rewrites this recipe; edits made here are replaced." : "Reads every text and voice cell and writes one clean recipe here.";
+  };
   const rerender = () => { renderedEl.innerHTML = `<h1 class="rendered-title">${esc(view.querySelector("#title").value || "Untitled")}</h1>${md(compiledEl.value)}`; };
   const setEditing = (on) => {
     renderedEl.hidden = on; compiledEl.hidden = !on; editToggle.textContent = on ? "Done editing" : "Edit";
@@ -565,8 +577,8 @@ async function renderRecipe(id, tab = "recipe") {
   compiledEl.addEventListener("blur", () => { setTimeout(() => { if (!fixbar.contains(document.activeElement)) save(); }, 0); });
   view.querySelectorAll(".tab").forEach((a) => a.addEventListener("click", () => { clearTimeout(saveTimer); save(); }));
   view.querySelector("#pane-recipe").addEventListener("click", (e) => { if (e.target.closest(".empty-recipe a")) { e.preventDefault(); location.hash = `#/r/${id}/notes`; } });
-  const compileBtn = view.querySelector("#compile");
-  if (compileBtn) compileBtn.addEventListener("click", async () => {
+  setStale(r);
+  if (compileBtn && !compileBtn.disabled) compileBtn.addEventListener("click", async () => {
     compileBtn.disabled = true; const was = compileBtn.textContent; compileBtn.textContent = "✦ Reading your notes…"; err("");
     await save();
     try {
@@ -574,9 +586,8 @@ async function renderRecipe(id, tab = "recipe") {
       compiledEl.value = r.compiled; grow(compiledEl);
       view.querySelector("#title").value = r.title; view.querySelector("#tags").value = r.tags.join(", ");
       setEditing(false);
-      compileBtn.textContent = "✦ Regenerate from notes";
-      view.querySelector("#compile-hint").textContent = "Reads every text and AI cell and rewrites this. Your edits here are replaced.";
-      view.querySelector('.tab[href$="/recipe"]').textContent = "Recipe";
+      setStale(r);
+      view.querySelector(".tab.on").textContent = "Recipe";
       status.textContent = "Saved";
     } catch (ex) { err(ex.message); compileBtn.textContent = was; }
     compileBtn.disabled = false;

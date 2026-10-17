@@ -97,6 +97,7 @@ def create_app() -> Flask:
 ADDED_COLUMNS = [
     ("recipes", "blocks", "TEXT NOT NULL DEFAULT '[]'"),
     ("recipes", "compiled", "TEXT NOT NULL DEFAULT ''"),
+    ("recipes", "compiled_hash", "VARCHAR(64) NOT NULL DEFAULT ''"),
 ]
 
 

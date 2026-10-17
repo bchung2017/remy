@@ -244,6 +244,7 @@ def compile_recipe(recipe_id: int):
     if errresp:
         return errresp
     recipe.compiled = draft.body.strip()[:60000]
+    recipe.compiled_hash = recipe.notes_hash()
     if recipe.title == UNTITLED and draft.title.strip():
         recipe.title = draft.title.strip()[:200]
     if not recipe.tags:

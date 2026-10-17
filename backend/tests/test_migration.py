@@ -32,6 +32,7 @@ class AddMissingColumns(unittest.TestCase):
         cols = {r[1] for r in sqlite3.connect(path).execute("PRAGMA table_info(recipes)")}
         self.assertIn("blocks", cols)
         self.assertIn("compiled", cols)
+        self.assertIn("compiled_hash", cols)
         rows = c.get("/api/recipes").get_json()
         self.assertEqual([r["title"] for r in rows], ["Old soup"])       # not reseeded: table wasn't empty
         self.assertEqual(rows[0]["blocks"], [{"id": "legacy", "type": "text", "text": "Boil it."}])
