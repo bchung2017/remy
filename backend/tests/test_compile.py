@@ -97,6 +97,17 @@ class Revise(unittest.TestCase):
             self.assertEqual(self.c.post("/api/recipes/revise", json={"text": "abc", "start": 0, "end": 1}).status_code, 503)
 
 
+class PromptsShareRules(unittest.TestCase):
+    def test_generate_and_fix_carry_the_same_recipe_rules(self):
+        from remy_api import llm
+        for prompt in (llm.COMPILE_SYSTEM, llm.REVISE_SYSTEM):
+            self.assertIn(llm.RECIPE_RULES, prompt)
+            for must in ("## 🧂 Ingredients", "## 🔪 Steps", "## 📝 Notes", "as bought from the store", "never in the body"):
+                self.assertIn(must, prompt)
+        self.assertIn("Return ONLY the replacement", llm.REVISE_SYSTEM)
+        self.assertNotIn("Return ONLY the replacement", llm.COMPILE_SYSTEM)
+
+
 class OldDbGetsCompiled(unittest.TestCase):
     def test_column_added_at_boot(self):
         c = make_client()   # fresh db has it via create_all; the ADDED_COLUMNS path is covered by test_migration

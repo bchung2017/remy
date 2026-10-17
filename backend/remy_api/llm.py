@@ -23,20 +23,16 @@ SYSTEM = (
 )
 
 
-COMPILE_SYSTEM = (
-    "You are given several notes a cook jotted or dictated about ONE recipe, in the "
-    "order they were written. They overlap, repeat, correct each other and ramble. "
-    "Produce the single clean recipe they describe. Later notes win over earlier ones "
-    "when they conflict. Keep the cook's quantities, ingredients, steps and wording; "
-    "remove repetition and filler. Do not invent ingredients, amounts or steps that "
-    "were not in the notes.\n\n"
+# Rules shared by every prompt behind the Recipe tab (Generate and Fix), so an edit
+# never drifts from the layout and the store-bought ingredient convention.
+RECIPE_RULES = (
     "Ingredients are listed exactly as bought from the store, never pre-prepped: write "
     "'1 onion', not '1 onion, diced'; '2 cloves garlic', not 'minced garlic'; '1 can "
     "chickpeas', not 'drained chickpeas'. Every preparation action (peeling, dicing, "
     "mincing, draining, soaking, toasting, bringing to room temperature) is its own "
     "numbered step, in the order the cook does it. The recipe records every action "
     "involved in cooking the food.\n\n"
-    "Write the body in this exact markdown layout and nothing else:\n"
+    "The recipe body uses this exact markdown layout and nothing else:\n"
     "## 🧂 Ingredients\n"
     "- one ingredient per line with quantity first\n"
     "\n"
@@ -46,23 +42,34 @@ COMPILE_SYSTEM = (
     "## 📝 Notes\n"
     "- optional: tips, substitutions, timing the cook mentioned; omit the section if none\n"
     "\n"
-    "Before the first section you may add one line like '⏱ 20 min prep · 90 min bake · "
-    "serves 4' only if the notes say so. Use **bold** for the key ingredient or temperature "
-    "in a step when it helps scanning. Do not include the recipe title in the body; it is "
-    "shown above it. No other headings, tables, or HTML.\n\n"
+    "Before the first section there may be one line like '⏱ 20 min prep · 90 min bake · "
+    "serves 4' only if the cook said so. Use **bold** for the key ingredient or temperature "
+    "in a step when it helps scanning. The recipe title is never in the body; it is shown "
+    "above it. No other headings, tables, or HTML. Keep the cook's quantities, ingredients, "
+    "steps and wording; do not invent ingredients, amounts or steps that were not given."
+)
+
+COMPILE_SYSTEM = (
+    "You are given several notes a cook jotted or dictated about ONE recipe, in the "
+    "order they were written. They overlap, repeat, correct each other and ramble. "
+    "Produce the single clean recipe they describe. Later notes win over earlier ones "
+    "when they conflict. Remove repetition and filler.\n\n"
+    + RECIPE_RULES + "\n\n"
     "If a title hint is given, keep it unless it is empty or clearly wrong. Tags: 1 to 4 "
     "short lowercase words for the dish type or main ingredient."
 )
 
 REVISE_SYSTEM = (
-    "You edit one highlighted span inside a plain-text recipe. You get the full recipe "
-    "for context, the exact highlighted span, and the cook's instruction (which may be "
-    "empty: then just tidy the span, fixing dictation errors, wording and formatting). "
-    "Return ONLY the replacement for the highlighted span, matching the formatting of its "
-    "surroundings (the recipe is markdown: '## 🧂 Ingredients' style headings, '- ' "
-    "ingredient lines, '1. ' numbered steps), nothing else. Do not rewrite text outside "
-    "the span. Ingredients stay as bought from the store; prep actions belong in steps. "
-    "Do not invent ingredients or steps the cook did not ask for."
+    "You edit one highlighted span inside a recipe. You get the full recipe for context, "
+    "the exact highlighted span, and the cook's instruction (which may be empty: then just "
+    "tidy the span, fixing dictation errors, wording and formatting).\n\n"
+    + RECIPE_RULES + "\n\n"
+    "Return ONLY the replacement for the highlighted span, nothing else, formatted so it "
+    "fits its surroundings in that layout: a span inside the Ingredients list stays '- ' "
+    "lines with the ingredient as bought; a span inside Steps stays numbered '1. ' lines, "
+    "and if the instruction adds a prep action it becomes its own step; if the span is a "
+    "whole section, return the whole section with its '## ' heading. Do not rewrite text "
+    "outside the span."
 )
 
 
