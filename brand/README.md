@@ -19,4 +19,6 @@ Palette, in one line each:
 | zucchini    | `#44702f` | `#97c87a` | success (always with a word or icon)   |
 | seine       | `#2d5a86` | `#8fbbe6` | info, secondary links, chart series 2  |
 
-Type: Yeseva One (display), Alegreya Sans (text, 17px floor), Courier Prime (tickets, IDs, code).
+Type: Yeseva One (display), Alegreya Sans (text, 17px floor), Courier Prime (tickets, IDs, code), Caveat (handwriting on recipe paper only).
+
+Recipe paper (fixed in both themes): `--paper` #fbf6ea, `--paper-rule` #c6d2de, `--paper-margin` #e2a39b, `--paper-ink` #2f2538, `--paper-ink-muted` #7a6d7e, `--pen` #2f4b8a, `--highlighter` #f6e27a.

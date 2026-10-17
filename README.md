@@ -10,9 +10,10 @@ The home page is the pass: an order rail with up to three starred recipes
 clipped up as tickets, and the counter below it with the range, a pot and
 skillet, and the cookbook standing beside them. On desktop the whole scene
 is zoomed to fill the window. Clicking the book lifts it to the camera,
-opens it, flips a couple of pages and lands on the cookbook (`#/book`): a
-single column with search, tag filter and sort on top and the table of
-contents below, with the first photo of each page. Star a page (from its
+opens it, flips a couple of pages (each showing a random recipe) and lands
+on the cookbook (`#/book`): a sheet of ruled notepad paper, light in both
+themes, with search, tag filter and sort handwritten on top and the table
+of contents below, each page's first photo taped beside its title. Star a page (from its
 header or the cookbook) to hang it on the pass; a fourth star demotes the
 oldest one instead of refusing.
 

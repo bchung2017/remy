@@ -62,12 +62,23 @@
   --font-display: "Yeseva One", "Abril Fatface", Georgia, serif;
   --font-body: "Alegreya Sans", "Gill Sans", "Segoe UI", system-ui, sans-serif;
   --font-ticket: "Courier Prime", "Courier New", Courier, monospace;
+  --font-hand: "Caveat", "Segoe Print", "Bradley Hand", cursive;
+  /* recipe paper: the cookbook and recipe pages are paper in both themes, so these never switch */
+  --paper: #fbf6ea;
+  --paper-rule: #c6d2de;
+  --paper-margin: #e2a39b;
+  --paper-ink: #2f2538;
+  --paper-ink-muted: #7a6d7e;
+  --pen: #2f4b8a;
+  --highlighter: #f6e27a;
 }
 /* Google Fonts:
-   https://fonts.googleapis.com/css2?family=Yeseva+One&family=Alegreya+Sans:wght@400;500;700&family=Courier+Prime&display=swap */
+   https://fonts.googleapis.com/css2?family=Yeseva+One&family=Alegreya+Sans:wght@400;500;700&family=Courier+Prime&family=Caveat:wght@400;700&display=swap */
 .display-xl { font: 400 64px/1 var(--font-display); letter-spacing: -0.01em; }
 .display-lg { font: 400 40px/1.05 var(--font-display); }
 .display-md { font: 400 26px/1.15 var(--font-display); }
+.hand-title  { font: 700 30px/1.1 var(--font-hand); }
+.hand-body   { font: 400 22px/28px var(--font-hand); }
 .title       { font: 700 20px/26px var(--font-body); }
 .body        { font: 400 17px/26px var(--font-body); }
 .body-strong { font: 700 17px/26px var(--font-body); }

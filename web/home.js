@@ -63,15 +63,24 @@ function ticketHtml(r, i) {
     </span></a></li>`;
 }
 
-const bookHtml = () => `
+// A page face: a recipe's title and the first lines of its compiled recipe (or its notes), or blank.
+const excerpt = (r) => (r.compiled || r.body || "")
+  .split("\n").map((l) => l.replace(/^#+\s*/, "").replace(/[*_`]/g, "").trim()).filter(Boolean).slice(0, 9).join("\n");
+const faceHtml = (side, r) => `<div class="page-face ${side}">${r ? `<span class="pg-title">${esc(r.title)}</span><span class="pg-body">${esc(excerpt(r))}</span>` : ""}</div>`;
+// pages[0..4] fill p1 front, p1 back, p2 front, p2 back, p3 front: the faces seen as the book opens and flips
+const bookHtml = (pages = []) => `
   <div class="book-3d">
     <div class="book-back"></div>
-    <div class="book-page p3"></div><div class="book-page p2"></div><div class="book-page p1"></div>
+    <div class="book-page p3">${faceHtml("front", pages[4])}</div>
+    <div class="book-page p2">${faceHtml("front", pages[2])}${faceHtml("back", pages[3])}</div>
+    <div class="book-page p1">${faceHtml("front", pages[0])}${faceHtml("back", pages[1])}</div>
     <div class="book-cover"><span class="cover-title">Anyone<br>Can<br>Cook</span><span class="cover-rule"></span></div>
   </div>`;
+let homeRecipes = [];
 
 async function renderHome() {
-  const starred = await api.list({ starred: 1, sort: "starred" });
+  const [starred, all] = await Promise.all([api.list({ starred: 1, sort: "starred" }), api.list({})]);
+  homeRecipes = all;
   const top = [starred[0], starred[1], starred[2]];
   view.innerHTML = `
     <section class="pass" aria-label="The pass">
@@ -110,7 +119,8 @@ function openBook(bookEl) {
   const fly = document.createElement("div");
   fly.className = "book-fly";
   fly.style.cssText = `left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px`;
-  fly.innerHTML = bookHtml();
+  const pick = homeRecipes.slice().sort(() => Math.random() - 0.5).slice(0, 5);   // random recipes on the pages; few recipes repeat rather than leave blanks
+  fly.innerHTML = bookHtml(pick.length ? Array.from({ length: 5 }, (_, i) => pick[i % pick.length]) : []);
   document.body.appendChild(fly); bookEl.style.visibility = "hidden";
   const stage = (cls, ms) => new Promise((res) => { requestAnimationFrame(() => { fly.classList.add(cls); setTimeout(res, ms); }); });
   (async () => {
