@@ -95,6 +95,21 @@ class Recipes(unittest.TestCase):
         titles = [x["title"] for x in self.client.get("/api/recipes?q=fold").get_json()]
         self.assertEqual(titles, ["Untitled"])                        # search hits block text
 
+    def test_stars_cap_at_three_and_demote_the_oldest(self):
+        ids = [self.client.post("/api/recipes", json={"title": t}).get_json()["id"] for t in ["A", "B", "C", "D"]]
+        star = lambda i: self.client.post(f"/api/recipes/{i}/star").get_json()
+        for i in ids[:3]:
+            self.assertIsNone(star(i)["demoted"])
+        self.assertTrue(star(ids[0])["recipe"]["starred"])                 # re-starring is a no-op, no demotion
+        r = star(ids[3])                                                   # fourth star: oldest (A) demoted
+        self.assertEqual(r["demoted"]["title"], "A")
+        starred = [x["title"] for x in self.client.get("/api/recipes?starred=1&sort=starred").get_json()]
+        self.assertEqual(starred, ["D", "C", "B"])                         # newest star first
+        self.assertFalse(self.client.get(f"/api/recipes/{ids[0]}").get_json()["starred"])
+        self.assertEqual(self.client.delete(f"/api/recipes/{ids[3]}/star").get_json()["recipe"]["starred"], False)
+        self.assertEqual(len(self.client.get("/api/recipes?starred=1").get_json()), 2)
+        self.assertEqual(self.client.post("/api/recipes/999/star").status_code, 404)
+
     def test_bad_blocks_are_400(self):
         rid = self.client.post("/api/recipes", json={"title": "x"}).get_json()["id"]
         for bad in ["nope", [{"type": "video"}], [{"type": "image"}], [{"type": "text", "text": 5}]]:

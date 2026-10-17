@@ -197,47 +197,6 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const when = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "");
 const uid = () => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, "") : Date.now().toString(36) + Math.random().toString(36).slice(2));
 
-// ---------- browse ----------
-const browse = { q: "", tag: "", sort: "updated" };
-try { Object.assign(browse, JSON.parse(sessionStorage.getItem("remy.browse") || "{}")); } catch {}
-const saveBrowse = () => { try { sessionStorage.setItem("remy.browse", JSON.stringify(browse)); } catch {} };
-
-function listHtml(recipes) {
-  if (!recipes.length) return `<p class="empty">${browse.q || browse.tag ? "No matches." : "No recipes yet."}</p>`;
-  return `<ul class="list">${recipes.map((r) => {
-    const img = r.blocks.find((b) => b.type === "image");   // first photo on the page, in cell order
-    return `<li><a class="card" href="#/r/${r.id}">
-      ${img ? `<img class="thumb" src="/api/assets/${esc(img.asset)}" alt="" loading="lazy">` : `<span class="thumb thumb-empty" aria-hidden="true"></span>`}
-      <div class="card-text">
-        <h3>${esc(r.title)}</h3>
-        <div class="meta"><span>${when(r.updatedAt)}</span>${r.tags.map((t) => `<span>#${esc(t)}</span>`).join("")}</div>
-      </div></a></li>`; }).join("")}</ul>`;
-}
-
-async function renderBrowse() {
-  const [recipes, tags] = await Promise.all([api.list(browse), api.tags()]);
-  view.innerHTML = `
-    <div class="toolbar">
-      <input id="q" type="search" placeholder="Search" value="${esc(browse.q)}" aria-label="Search recipes">
-      <select id="sort" aria-label="Sort">
-        <option value="updated" ${browse.sort === "updated" ? "selected" : ""}>Recently updated</option>
-        <option value="created" ${browse.sort === "created" ? "selected" : ""}>Newest</option>
-        <option value="title" ${browse.sort === "title" ? "selected" : ""}>Title</option>
-      </select>
-    </div>
-    ${tags.length ? `<div class="tags">${tags.map((t) =>
-      `<button class="tag ${browse.tag === t.tag ? "on" : ""}" data-tag="${esc(t.tag)}">${esc(t.tag)} ${t.count}</button>`).join("")}</div>` : ""}
-    <div id="list">${listHtml(recipes)}</div>`;
-  const q = view.querySelector("#q");
-  let timer;
-  const refresh = async () => { view.querySelector("#list").innerHTML = listHtml(await api.list(browse)); };
-  q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => { browse.q = q.value; saveBrowse(); refresh(); }, 200); });
-  view.querySelector("#sort").addEventListener("change", (e) => { browse.sort = e.target.value; saveBrowse(); refresh(); });
-  view.querySelectorAll(".tag").forEach((b) => b.addEventListener("click", () => {
-    browse.tag = browse.tag === b.dataset.tag ? "" : b.dataset.tag; saveBrowse(); renderBrowse();
-  }));
-}
-
 // Tiny markdown renderer for the Recipe tab: #/##/### headings, ---, "- " bullets, "1. " steps,
 // **bold**, *italic*, paragraphs. Input is escaped first, so the model's output can't inject markup.
 function md(src) {
@@ -323,6 +282,7 @@ async function renderRecipe(id, tab = "recipe") {
         <input class="title display-lg" id="title" value="${esc(r.title)}" placeholder="Untitled" aria-label="Title">
         <div class="nb-meta">
           <input class="tagsin" id="tags" value="${esc(r.tags.join(", "))}" placeholder="tags, comma separated" aria-label="Tags">
+          <button class="star ${r.starred ? "on" : ""}" id="star" title="${r.starred ? "Take off the pass" : "Hang on the pass (up to 3)"}" aria-pressed="${r.starred}" aria-label="Star this recipe">${r.starred ? "★" : "☆"}</button>
           <span class="status" id="status">${when(r.updatedAt)}</span>
         </div>
       </header>
@@ -378,6 +338,17 @@ async function renderRecipe(id, tab = "recipe") {
 
   const cellsEl = view.querySelector("#cells");
   const status = view.querySelector("#status");
+  const starBtn = view.querySelector("#star");
+  starBtn.addEventListener("click", async () => {
+    starBtn.disabled = true;
+    try {
+      const res = await toggleStar(id, starBtn.classList.contains("on"));
+      const on = res.recipe.starred; r.starred = on;
+      starBtn.classList.toggle("on", on); starBtn.textContent = on ? "★" : "☆"; starBtn.setAttribute("aria-pressed", on); starBtn.title = on ? "Take off the pass" : "Hang on the pass (up to 3)";
+      status.textContent = res.demoted ? `On the pass · ${res.demoted.title} came down` : on ? "On the pass" : "Off the pass";
+    } catch (ex) { err(ex.message); }
+    starBtn.disabled = false;
+  });
   const err = (msg) => { const el = view.querySelector("#err"); el.textContent = msg; el.hidden = !msg; };
   const transcripts = Object.fromEntries(r.blocks.filter((b) => b.type === "ai").map((b) => [b.id, b.transcript || ""]));
 
@@ -640,7 +611,8 @@ async function newRecipe() {
 function route() {
   const h = location.hash || "#/";
   let m;
-  if (h === "#/" || h === "#") return renderBrowse();
+  if (h === "#/" || h === "#") return renderHome();
+  if (h === "#/book") return renderBook();
   if (h === "#/new") return newRecipe();
   if ((m = h.match(/^#\/r\/(\d+)(\/notes|\/recipe)?$/))) return renderRecipe(m[1], m[2] === "/notes" ? "notes" : "recipe");
   location.hash = "#/";

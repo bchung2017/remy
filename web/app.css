@@ -15,6 +15,9 @@ a { color: var(--copper); }
   border-bottom: 1px solid var(--hairline);
 }
 .brand { color: var(--aubergine); text-decoration: none; }
+.topnav { margin-left: auto; margin-right: var(--space-3); }
+.topnav a { color: var(--ink-muted); font: 700 15px/22px var(--font-body); text-decoration: none; }
+.topnav a:hover { color: var(--copper); }
 .view { max-width: 880px; margin: 0 auto; padding-block: var(--space-6) var(--space-12); }
 
 /* controls */

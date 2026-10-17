@@ -33,6 +33,7 @@ class AddMissingColumns(unittest.TestCase):
         self.assertIn("blocks", cols)
         self.assertIn("compiled", cols)
         self.assertIn("compiled_hash", cols)
+        self.assertIn("starred_at", cols)
         rows = c.get("/api/recipes").get_json()
         self.assertEqual([r["title"] for r in rows], ["Old soup"])       # not reseeded: table wasn't empty
         self.assertEqual(rows[0]["blocks"], [{"id": "legacy", "type": "text", "text": "Boil it."}])

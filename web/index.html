@@ -15,13 +15,16 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Yeseva+One&family=Alegreya+Sans:wght@400;500;700&family=Courier+Prime&display=swap" crossorigin="anonymous">
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/home.css">
 </head>
 <body>
   <header class="top">
     <a class="brand display-md" href="#/">remy</a>
+    <nav class="topnav"><a href="#/book">Cookbook</a></nav>
     <a class="btn btn-primary" href="#/new">New recipe</a>
   </header>
   <main id="view" class="view"></main>
+  <script src="/home.js"></script>
   <script src="/app.js"></script>
   <script>
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");

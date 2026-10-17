@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from . import db
 
 BLOCK_TYPES = {"text", "image", "ai"}
+MAX_STARS = 3
 MAX_BLOCKS = 200
 MAX_BLOCK_TEXT = 20000
 
@@ -74,6 +75,7 @@ class Recipe(db.Model):
     body = db.Column(db.Text, nullable=False, default="")          # derived: text of all text/ai blocks
     compiled = db.Column(db.Text, nullable=False, default="")      # the one clean recipe built from the cells (Recipe tab)
     compiled_hash = db.Column(db.String(64), nullable=False, default="")   # hash of the notes the recipe was generated from
+    starred_at = db.Column(db.DateTime, nullable=True)                     # set = on the pass; at most MAX_STARS pages, oldest demoted
     tags = db.Column(db.String(400), nullable=False, default="")  # ",a,b," — padded for LIKE matching
     created_at = db.Column(db.DateTime, nullable=False, default=_utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
@@ -125,6 +127,8 @@ class Recipe(db.Model):
             "body": self.body,
             "compiled": self.compiled or "",
             "notesChanged": self.notes_changed(),
+            "starred": self.starred_at is not None,
+            "starredAt": self.starred_at.isoformat() if self.starred_at else None,
             "blocks": self.block_list(),
             "tags": self.tag_list(),
             "createdAt": self.created_at.isoformat() if self.created_at else None,

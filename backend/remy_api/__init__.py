@@ -98,6 +98,7 @@ ADDED_COLUMNS = [
     ("recipes", "blocks", "TEXT NOT NULL DEFAULT '[]'"),
     ("recipes", "compiled", "TEXT NOT NULL DEFAULT ''"),
     ("recipes", "compiled_hash", "VARCHAR(64) NOT NULL DEFAULT ''"),
+    ("recipes", "starred_at", "TIMESTAMP NULL"),
 ]
 
 

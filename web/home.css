@@ -1,0 +1,110 @@
+/* ===== the pass (home) ===== */
+.pass { display: grid; gap: 0; max-width: 880px; margin: 0 auto; }
+
+/* shelf with the cookbook on it */
+.shelf-row { position: relative; height: 150px; perspective: 900px; }
+.shelf { position: absolute; left: 0; right: 0; bottom: 18px; height: 14px; border-radius: 3px; background: var(--copper); box-shadow: 0 6px 0 0 color-mix(in srgb, var(--copper) 70%, var(--ink)); }
+.shelf::after { content: ""; position: absolute; left: 24px; right: 24px; top: 100%; height: 10px; background: linear-gradient(to bottom, rgba(42,33,48,.22), transparent); }
+.book { position: absolute; right: 56px; bottom: 32px; width: 96px; height: 128px; padding: 0; border: 0; background: transparent; cursor: pointer; perspective: 900px; }
+.book:focus-visible { outline: 2px solid var(--copper); outline-offset: 6px; border-radius: var(--radius-sm); }
+.shelf-label { position: absolute; left: 0; bottom: 44px; color: var(--ink-muted); font: 500 14px/20px var(--font-ticket); text-decoration: none; }
+.shelf-label:hover { color: var(--copper); }
+
+/* the 3D book: pages stacked under a cover that swings on its spine */
+.book-3d { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transform: rotateX(58deg) rotateZ(-14deg) translateZ(0); transition: transform 750ms cubic-bezier(.2,.7,.2,1); }
+.book:hover .book-3d { transform: rotateX(50deg) rotateZ(-10deg) translateZ(8px); }
+.book-back, .book-page, .book-cover { position: absolute; inset: 0; border-radius: 2px 6px 6px 2px; backface-visibility: hidden; }
+.book-back { background: var(--aubergine); transform: translateZ(-14px); box-shadow: 0 14px 20px rgba(42,33,48,.35); }
+.book-page { background: var(--surface); border: 1px solid var(--hairline); left: 4px; right: 2px; transform-origin: left center; transition: transform 500ms cubic-bezier(.3,.6,.2,1); }
+.book-page.p3 { transform: translateZ(-10px); } .book-page.p2 { transform: translateZ(-6px); } .book-page.p1 { transform: translateZ(-2px); }
+.book-cover { background: var(--aubergine); transform: translateZ(2px); transform-origin: left center; transition: transform 650ms cubic-bezier(.3,.6,.2,1); display: grid; place-content: center; text-align: center; box-shadow: inset 6px 0 0 var(--copper), inset 8px 0 0 color-mix(in srgb, var(--copper) 60%, var(--ink)); }
+.cover-title { color: var(--lamp); font: 400 15px/1.05 var(--font-display); padding-left: 8px; }
+.cover-rule { display: block; width: 28px; height: 2px; margin: 8px auto 0 8px; background: var(--copper); }
+
+/* flight: a fixed clone lifts to the centre, faces the camera, opens, flips */
+.book-fly { position: fixed; z-index: 70; perspective: 1100px; transition: left 750ms cubic-bezier(.2,.7,.2,1), top 750ms cubic-bezier(.2,.7,.2,1), width 750ms cubic-bezier(.2,.7,.2,1), height 750ms cubic-bezier(.2,.7,.2,1), opacity 300ms ease-out; }
+.book-fly .book-3d { transform: rotateX(58deg) rotateZ(-14deg); }
+.book-fly .cover-title { font-size: 34px; } .book-fly .cover-rule { width: 56px; height: 3px; }
+.book-fly.to-camera { left: calc(50vw - 130px) !important; top: calc(50vh - 170px) !important; width: 260px !important; height: 340px !important; }
+.book-fly.to-camera .book-3d { transform: rotateX(0) rotateZ(0); }
+.book-fly.opened .book-cover { transform: translateZ(2px) rotateY(-178deg); }
+.book-fly.flipped .book-page.p1 { transform: translateZ(-2px) rotateY(-176deg); }
+.book-fly.flipped .book-page.p2 { transform: translateZ(-6px) rotateY(-174deg); transition-delay: 160ms; }
+.book-fly.flipped .book-page.p3 { transform: translateZ(-10px) rotateY(-172deg); transition-delay: 320ms; }
+.book-fly.gone { opacity: 0; }
+
+/* the order rail: a copper bar with three tickets clipped to it */
+.rail { position: relative; padding-top: 18px; }
+.rail-bar { height: 10px; border-radius: 5px; background: var(--copper); box-shadow: 0 3px 0 0 color-mix(in srgb, var(--copper) 70%, var(--ink)); }
+.tickets { list-style: none; margin: 0; padding: 0 var(--space-4); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
+.ticket { position: relative; margin-top: -6px; transform: rotate(var(--tilt)); transform-origin: top center; transition: transform 160ms ease-out; }
+.ticket:hover { transform: rotate(0deg) translateY(2px); }
+.ticket a { display: block; color: inherit; text-decoration: none; }
+.clip { position: absolute; left: 50%; top: -4px; width: 18px; height: 22px; margin-left: -9px; border-radius: 3px 3px 6px 6px; background: linear-gradient(var(--slate), var(--ink-muted)); box-shadow: inset 0 2px 0 rgba(255,255,255,.35); z-index: 1; }
+.slip { display: grid; gap: 2px; margin-top: 10px; padding: var(--space-3) var(--space-3) var(--space-4); background: var(--surface-raised); border: 1px solid var(--hairline); border-bottom: 2px dashed var(--hairline); font-family: var(--font-ticket); color: var(--ink); box-shadow: 0 6px 14px rgba(42,33,48,.12); min-height: 112px; }
+.slip-head { display: flex; justify-content: space-between; font: 700 11px/16px var(--font-ticket); letter-spacing: .08em; color: var(--ink-muted); }
+.slip-star { color: var(--lamp); font-size: 13px; }
+.slip-title { font: 700 17px/22px var(--font-ticket); overflow-wrap: break-word; hyphens: auto; }
+.slip-meta { font: 400 12px/16px var(--font-ticket); color: var(--ink-muted); }
+.ticket.empty .slip { color: var(--ink-muted); background: var(--surface); }
+.ticket.empty .slip-title { color: var(--hairline); }
+
+/* the stove */
+.stove { margin-top: var(--space-6); }
+.stove-svg { display: block; width: 100%; height: auto; }
+.f-sunken { fill: var(--surface-sunken); } .f-raised { fill: var(--surface-raised); } .f-ink { fill: var(--ink); }
+.f-copper { fill: var(--copper); } .f-copper-dark { fill: color-mix(in srgb, var(--copper) 72%, var(--ink)); } .s-copper-dark { stroke: color-mix(in srgb, var(--copper) 60%, var(--ink)); stroke-width: 2; }
+.f-aubergine { fill: var(--aubergine); } .f-lamp { fill: var(--lamp); } .f-tomato { fill: var(--tomato); }
+.s-hair { stroke: var(--hairline); stroke-width: 1; } .s-slate { stroke: var(--slate); stroke-width: 1.5; }
+.glow { opacity: .55; animation: glow 3s ease-in-out infinite alternate; }
+.wisp { fill: none; stroke: var(--ink-muted); stroke-width: 3; stroke-linecap: round; opacity: 0; animation: wisp 3.2s ease-out infinite; }
+.steam .wisp:nth-child(2) { animation-delay: 1.1s; } .steam .wisp:nth-child(3) { animation-delay: 2.1s; }
+.flame { transform-origin: 50% 100%; transform-box: fill-box; animation: flame 900ms ease-in-out infinite alternate; }
+.flames .flame:nth-child(2n) { animation-delay: 300ms; } .flames .flame:nth-child(3n) { animation-delay: 600ms; }
+@keyframes wisp { 0% { opacity: 0; transform: translateY(6px); } 25% { opacity: .55; } 100% { opacity: 0; transform: translateY(-26px); } }
+@keyframes flame { from { transform: scaleY(.85) scaleX(1.05); } to { transform: scaleY(1.12) scaleX(.95); } }
+@keyframes glow { from { opacity: .4; } to { opacity: .7; } }
+@media (prefers-reduced-motion: reduce) { .wisp, .flame, .glow { animation: none; } .wisp { opacity: .4; } .book-fly, .book-3d, .book-page, .book-cover { transition: none; } }
+
+/* ===== the open book (browse) ===== */
+.spread { display: grid; grid-template-columns: 1fr 1fr; max-width: 980px; margin: 0 auto; background: var(--surface-raised); border: 1px solid var(--hairline); border-radius: var(--radius-lg); box-shadow: 0 16px 36px rgba(42,33,48,.16); position: relative; }
+.spread::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 40px; margin-left: -20px; background: linear-gradient(to right, transparent, rgba(42,33,48,.10) 48%, rgba(42,33,48,.14) 52%, transparent); pointer-events: none; }
+.spread.settle { animation: settle 420ms ease-out; }
+@keyframes settle { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
+.bpage { padding: var(--space-8) var(--space-6); min-width: 0; }
+.bpage.left { border-right: 1px solid var(--hairline); display: grid; gap: var(--space-3); align-content: start; }
+.bpage.left h2 { margin: 0; color: var(--aubergine); }
+.bpage.left .hint { margin: 0; }
+.bpage .toolbar { margin: 0; }
+.back-to-pass { justify-self: start; margin-top: var(--space-4); }
+.toc { list-style: none; margin: 0; padding: 0; counter-reset: toc; }
+.toc li { padding: var(--space-2) 0; border-bottom: 1px dotted var(--hairline); }
+.toc-row { display: flex; align-items: center; gap: var(--space-2); }
+.toc a { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--space-2); color: inherit; text-decoration: none; }
+.star { flex: none; width: 32px; height: 32px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--slate); font-size: 20px; line-height: 1; cursor: pointer; }
+.star:hover { color: var(--lamp); background: var(--surface-sunken); }
+.star.on { color: var(--lamp); }
+.star:focus-visible { outline: 2px solid var(--copper); }
+.toc a:hover .toc-title { color: var(--copper); }
+.toc-thumb { flex: none; width: 32px; height: 32px; border-radius: var(--radius-sm); object-fit: cover; background: var(--surface-sunken); }
+.toc-empty { position: relative; } .toc-empty::before { content: ""; position: absolute; inset: 6px; border-radius: var(--radius-pill); border: 1.5px solid var(--hairline); }
+.toc-title { font: 700 17px/24px var(--font-body); min-width: 0; }
+.toc-dots { flex: 1 1 12px; border-bottom: 2px dotted var(--hairline); transform: translateY(5px); min-width: 12px; }
+.toc-num { flex: none; font: 400 13px/20px var(--font-ticket); color: var(--ink-muted); }
+.toc-tags { display: block; padding-left: 40px; font: 400 12px/16px var(--font-ticket); color: var(--ink-muted); }
+
+@media (max-width: 600px) {
+  .shelf-row { height: 120px; }
+  .book { width: 76px; height: 102px; right: 28px; }
+  .cover-title { font-size: 12px; }
+  .tickets { gap: var(--space-2); padding: 0 var(--space-2); }
+  .slip { padding: var(--space-2); min-height: 96px; }
+  .slip-title { font-size: 13px; line-height: 17px; }
+  .slip-head { font-size: 10px; }
+  .spread { grid-template-columns: 1fr; }
+  .spread::before { display: none; }
+  .bpage { padding: var(--space-4); }
+  .bpage.left { border-right: 0; border-bottom: 1px solid var(--hairline); }
+  .book-fly.to-camera { left: calc(50vw - 100px) !important; top: calc(50vh - 130px) !important; width: 200px !important; height: 260px !important; }
+  .book-fly .cover-title { font-size: 26px; }
+}

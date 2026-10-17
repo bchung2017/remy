@@ -6,8 +6,13 @@ Jupyter-style notebook of numbered cells you insert, move, merge and delete
 from a toolbar. Three cell types: **Text**, **Image** (photo upload, stored
 in the database), and **Voice** (dictate with the browser's speech
 recognition or, when that's missing, Groq; the transcript becomes the note).
-Browse (each row shows the page's first photo, or an empty plate), search,
-filter by tag, sort, delete.
+The home page is the pass: a shelf with the cookbook, an order rail with up
+to three starred recipes clipped up as tickets, and the stove. Clicking the
+book lifts it to the camera, opens it, flips to the middle and lands on the
+open spread (`#/book`): search, tag filter, sort, and a table of contents
+with the first photo of each page. Star a page (from its header or the
+spread) to hang it on the pass; a fourth star demotes the oldest one instead
+of refusing.
 
 A **Flask + SQLite** JSON API plus a no-build static frontend, swapping to
 **Postgres/Supabase** via `DATABASE_URL`, isolated in its own schema so it can
@@ -202,7 +207,9 @@ deduped. Writes take `blocks`; a legacy `body` string becomes one text block.
 | Method   | Path            | Purpose                                                          |
 | -------- | --------------- | ---------------------------------------------------------------- |
 | `GET`    | `/health`       | liveness + active backend/schema                                 |
-| `GET`    | `/recipes`      | list; `?q=` searches title/body/tags, `?tag=` filters, `?sort=updated\|created\|title` |
+| `GET`    | `/recipes`      | list; `?q=` searches title/body/tags, `?tag=` filters, `?starred=1`, `?sort=updated\|created\|title\|starred` |
+| `POST`   | `/recipes/:id/star` | star (max 3; the oldest star is demoted) → `{recipe, demoted}`      |
+| `DELETE` | `/recipes/:id/star` | unstar                                                           |
 | `POST`   | `/recipes`      | create `{title?, blocks?, tags?}` (empty body ⇒ an Untitled page) |
 | `GET`    | `/recipes/:id`  | read one                                                         |
 | `PUT`    | `/recipes/:id`  | partial update of `title`, `blocks`, `tags`, `compiled`          |
@@ -226,7 +233,8 @@ brand/
 web/
   index.html            shell; loads Google Fonts, tokens.css, app.css, app.js
   app.css               layout + components on top of the tokens
-  app.js                hash router: #/ browse, #/new (creates, opens Notes), #/r/:id Recipe tab, #/r/:id/notes
+  app.js                hash router: #/ the pass, #/book the open cookbook, #/new (creates, opens Notes), #/r/:id Recipe tab, #/r/:id/notes
+  home.js / home.css    the pass scene (shelf, 3D book, ticket rail, stove SVG), the book flight, the open-book browse
   manifest.webmanifest  PWA manifest (standalone, start_url /)
   sw.js                 service worker: caches the shell, passes /api through
   icons/                icon.svg source + 192/512 PNG + apple-touch-icon

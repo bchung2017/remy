@@ -1,10 +1,12 @@
 """HTTP routes for the remy API, all under /api."""
+from datetime import datetime, timezone
+
 import anthropic
 from flask import Blueprint, Response, current_app, jsonify, request
 from sqlalchemy import or_
 
 from . import db, llm, stt
-from .models import Asset, Recipe, new_id, normalize_blocks
+from .models import MAX_STARS, Asset, Recipe, new_id, normalize_blocks
 
 api = Blueprint("api", __name__, url_prefix="/api")
 
@@ -12,6 +14,7 @@ SORTS = {
     "updated": (Recipe.updated_at.desc(), Recipe.id.desc()),
     "created": (Recipe.created_at.desc(), Recipe.id.desc()),
     "title": (db.func.lower(Recipe.title), Recipe.id),
+    "starred": (Recipe.starred_at.desc(), Recipe.updated_at.desc(), Recipe.id.desc()),
 }
 UNTITLED = "Untitled"
 MAX_ASSET_BYTES = 8 * 1024 * 1024
@@ -76,6 +79,8 @@ def list_recipes():
     tag = (request.args.get("tag") or "").strip().lower()
     if tag:
         q = q.filter(Recipe.tags.like(f"%,{tag},%"))
+    if request.args.get("starred"):
+        q = q.filter(Recipe.starred_at.isnot(None))
     q = q.order_by(*SORTS.get(request.args.get("sort", "updated"), SORTS["updated"]))
     return jsonify([r.to_dict() for r in q.all()])
 
@@ -96,6 +101,37 @@ def get_recipe(recipe_id: int):
     if recipe is None:
         return jsonify({"error": "not found"}), 404
     return jsonify(recipe.to_dict())
+
+
+# --- stars: up to MAX_STARS pages sit on the pass; a fourth star demotes the oldest ---
+
+@api.post("/recipes/<int:recipe_id>/star")
+def star_recipe(recipe_id: int):
+    """Star a page. Over the limit, the oldest-starred page is demoted (never a reject).
+    Returns {recipe, demoted: {id, title} | null}."""
+    recipe = db.session.get(Recipe, recipe_id)
+    if recipe is None:
+        return jsonify({"error": "not found"}), 404
+    demoted = None
+    if recipe.starred_at is None:
+        recipe.starred_at = datetime.now(timezone.utc)
+        others = (Recipe.query.filter(Recipe.starred_at.isnot(None), Recipe.id != recipe.id)
+                  .order_by(Recipe.starred_at.asc(), Recipe.id.asc()).all())
+        for old in others[: max(0, len(others) + 1 - MAX_STARS)]:
+            old.starred_at = None
+            demoted = {"id": old.id, "title": old.title}
+        db.session.commit()
+    return jsonify({"recipe": recipe.to_dict(), "demoted": demoted})
+
+
+@api.delete("/recipes/<int:recipe_id>/star")
+def unstar_recipe(recipe_id: int):
+    recipe = db.session.get(Recipe, recipe_id)
+    if recipe is None:
+        return jsonify({"error": "not found"}), 404
+    recipe.starred_at = None
+    db.session.commit()
+    return jsonify({"recipe": recipe.to_dict(), "demoted": None})
 
 
 @api.post("/recipes")
