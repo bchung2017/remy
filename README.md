@@ -94,8 +94,9 @@ one clean recipe: `✦ Generate from notes` sends every text and voice cell, in
 order, to `POST /api/recipes/:id/compile`, which asks `claude-haiku-5-5` to
 merge them (later notes win on conflicts, repetition removed, nothing
 invented) and stores the result in `compiled`. The compiled recipe is
-markdown in a fixed layout (`## 🧂 Ingredients`, `## 🔪 Steps`, optional
-`## 📝 Notes`, an optional `⏱` line) and the tab renders it with the display
+markdown in a fixed layout (`## 🧂 Ingredients`, `## 🍳 Equipment` as bare
+items with no explanations, `## 🔪 Steps`, optional `## 📝 Notes`, an
+optional `⏱` line) and the tab renders it with the display
 face for headings, copper-numbered steps and generous spacing, via a small
 built-in renderer (headings, lists, bold, italic; input is escaped first).
 Ingredients are listed as bought from the store; every prep action is its own
@@ -145,8 +146,7 @@ the arrow keys move the selection, Shift+arrow moves the cell, `Enter` edits,
   block holding the formatted text (the output) and the transcript (the
   input, shown collapsed). An untitled page takes the drafted title; empty
   tags take the drafted tags. Needs `ANTHROPIC_API_KEY`; otherwise the
-  endpoint returns 503, `/api/health` reports `draft: false` and `+ AI` is
-  disabled. Transcripts are capped at 8000 characters and output at 2000
+  endpoint returns 503 and `/api/health` reports `draft: false`. Transcripts are capped at 8000 characters and output at 2000
   tokens, well under a tenth of a cent per run.
 
 The app has no auth: anyone who can reach the URL can spend your key. Fine
@@ -207,7 +207,7 @@ deduped. Writes take `blocks`; a legacy `body` string becomes one text block.
 | `GET`    | `/assets/:id`   | the stored image bytes                                           |
 | `POST`   | `/transcribe`   | multipart audio chunk (+ optional `prompt`) → `{text}` via Groq; 503 when off |
 | `POST`   | `/recipes/draft` | `{transcript, title?}` → `{title, body, tags}` via Claude; 503 when off |
-| `POST`   | `/recipes/:id/compile` | every text/AI cell → one clean recipe stored in `compiled`; returns the recipe |
+| `POST`   | `/recipes/:id/compile` | every text/voice cell → one clean recipe stored in `compiled`; returns the recipe |
 | `POST`   | `/recipes/revise` | `{text, start, end, instruction?}` → `{replacement}` for that span; nothing saved |
 
 ## Layout

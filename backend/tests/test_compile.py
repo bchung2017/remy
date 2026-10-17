@@ -102,7 +102,7 @@ class PromptsShareRules(unittest.TestCase):
         from remy_api import llm
         for prompt in (llm.COMPILE_SYSTEM, llm.REVISE_SYSTEM):
             self.assertIn(llm.RECIPE_RULES, prompt)
-            for must in ("## 🧂 Ingredients", "## 🔪 Steps", "## 📝 Notes", "as bought from the store", "never in the body"):
+            for must in ("## 🧂 Ingredients", "## 🍳 Equipment", "## 🔪 Steps", "## 📝 Notes", "as bought from the store", "never in the body"):
                 self.assertIn(must, prompt)
         self.assertIn("Return ONLY the replacement", llm.REVISE_SYSTEM)
         self.assertNotIn("Return ONLY the replacement", llm.COMPILE_SYSTEM)
