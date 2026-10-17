@@ -87,11 +87,17 @@ Each page has two tabs. **Notes** is the cell notebook. **Recipe** is the
 one clean recipe: `✦ Generate from notes` sends every text and AI cell, in
 order, to `POST /api/recipes/:id/compile`, which asks `claude-haiku-5-5` to
 merge them (later notes win on conflicts, repetition removed, nothing
-invented) and stores the result in `compiled`, editable in place and
-autosaved. Highlight any span of the recipe and a bar appears: type what
-should change (or nothing, to just tidy it) and `✦ Fix` sends the full text,
-the span and the instruction to `POST /api/recipes/revise`, which returns a
-replacement for that span only. Search covers the compiled recipe too.
+invented) and stores the result in `compiled`. The compiled recipe is
+markdown in a fixed layout (`## 🧂 Ingredients`, `## 🔪 Steps`, optional
+`## 📝 Notes`, an optional `⏱` line) and the tab renders it with the display
+face for headings, copper-numbered steps and generous spacing, via a small
+built-in renderer (headings, lists, bold, italic; input is escaped first).
+Ingredients are listed as bought from the store; every prep action is its own
+step. Press `Edit` for the raw text, autosaved; while editing, highlight any
+span and a bar appears: type what should change (or nothing, to just tidy
+it) and `✦ Fix` sends the full text, the span and the instruction to
+`POST /api/recipes/revise`, which returns a replacement for that span only.
+Search covers the compiled recipe too.
 
 In the notebook: `+ Text`, `+ Image`, `+ AI` insert after the selected cell
 (or at the end). A selected cell takes ↑ ↓ and `× cell` from the toolbar or

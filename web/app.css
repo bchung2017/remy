@@ -1,4 +1,5 @@
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }
 body {
   background: var(--surface); color: var(--ink);
@@ -87,6 +88,26 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--copper); ou
   font: 400 17px/28px var(--font-body); white-space: pre-wrap;
 }
 .compiled:focus { outline: none; border-color: var(--copper); box-shadow: 0 0 0 2px var(--copper); }
+/* the rendered recipe: display face for the title and section heads, generous spacing,
+   copper numerals on steps, a hairline + short copper rule under each section */
+.rendered { padding: var(--space-6) var(--space-6) var(--space-8); background: var(--surface-raised); border: 1px solid var(--hairline); border-radius: var(--radius-lg); }
+.rendered > * { max-width: 65ch; }
+.rendered-title, .rendered h1 { margin: 0 0 var(--space-4); color: var(--aubergine); font: 400 44px/1.05 var(--font-display); text-wrap: balance; }
+.rendered h2 { position: relative; margin: var(--space-8) 0 var(--space-3); padding-bottom: var(--space-2); color: var(--aubergine); font: 400 26px/1.15 var(--font-display); border-bottom: 1px solid var(--hairline); }
+.rendered h2::after { content: ""; position: absolute; left: 0; bottom: -1px; width: 48px; border-bottom: 2px solid var(--copper); }
+.rendered h3 { margin: var(--space-6) 0 var(--space-2); color: var(--ink); font: 700 19px/26px var(--font-body); }
+.rendered p { margin: 0 0 var(--space-3); font: 400 17px/28px var(--font-body); }
+.rendered p:first-of-type { color: var(--ink-muted); font: 500 15px/22px var(--font-ticket); }
+.rendered ul, .rendered ol { margin: 0 0 var(--space-4); padding-left: 0; list-style: none; }
+.rendered ul li { position: relative; padding: var(--space-1) 0 var(--space-1) var(--space-6); font: 400 17px/26px var(--font-body); border-bottom: 1px dashed var(--hairline); }
+.rendered ul li::before { content: "◦"; position: absolute; left: var(--space-2); color: var(--copper); font-weight: 700; }
+.rendered ol { counter-reset: step; }
+.rendered ol li { position: relative; counter-increment: step; padding: var(--space-2) 0 var(--space-2) 52px; min-height: 40px; font: 400 17px/28px var(--font-body); }
+.rendered ol li::before { content: counter(step); position: absolute; left: 0; top: var(--space-1); width: 36px; height: 36px; border-radius: var(--radius-pill); background: var(--lamp); color: var(--ink); font: 400 20px/36px var(--font-display); text-align: center; }
+.rendered ol li + li { border-top: 1px solid var(--hairline); }
+.rendered strong { color: var(--aubergine); }
+.rendered hr { border: 0; border-top: 1px solid var(--hairline); margin: var(--space-6) 0; }
+#edit-hint { margin: var(--space-2) 0 0; }
 .fixbar {
   position: sticky; bottom: calc(var(--space-2) + env(safe-area-inset-bottom, 0px)); z-index: 3;
   display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2);
@@ -177,6 +198,8 @@ body.rec-open { overflow: hidden; }
 .error { color: var(--tomato); margin: var(--space-2) 0 0; }
 
 @media (max-width: 600px) {
+  .rendered { padding: var(--space-4) var(--space-4) var(--space-6); }
+  .rendered-title, .rendered h1 { font-size: 34px; }
   .cell { grid-template-columns: 44px minmax(0, 1fr); }
   .gutter .kind { display: none; }
   .title { font-size: 32px; }

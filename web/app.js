@@ -239,6 +239,28 @@ async function renderBrowse() {
   }));
 }
 
+// Tiny markdown renderer for the Recipe tab: #/##/### headings, ---, "- " bullets, "1. " steps,
+// **bold**, *italic*, paragraphs. Input is escaped first, so the model's output can't inject markup.
+function md(src) {
+  const inline = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
+  const lines = String(src || "").replace(/\r/g, "").split("\n");
+  let out = "", list = null, para = [];
+  const flushPara = () => { if (para.length) { out += `<p>${para.map(inline).join("<br>")}</p>`; para = []; } };
+  const flushList = () => { if (list) { out += `</${list}>`; list = null; } };
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    let m;
+    if (!line.trim()) { flushPara(); flushList(); continue; }
+    if ((m = line.match(/^(#{1,3})\s+(.*)$/))) { flushPara(); flushList(); out += `<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`; continue; }
+    if (/^(-{3,}|\*{3,})$/.test(line.trim())) { flushPara(); flushList(); out += "<hr>"; continue; }
+    if ((m = line.match(/^\s*[-*•]\s+(.*)$/))) { flushPara(); if (list !== "ul") { flushList(); list = "ul"; out += "<ul>"; } out += `<li>${inline(m[1])}</li>`; continue; }
+    if ((m = line.match(/^\s*\d+[.)]\s+(.*)$/))) { flushPara(); if (list !== "ol") { flushList(); list = "ol"; out += "<ol>"; } out += `<li>${inline(m[1])}</li>`; continue; }
+    flushList(); para.push(line);
+  }
+  flushPara(); flushList();
+  return out;
+}
+
 // ---------- notebook page (Jupyter-style cells) ----------
 let draftOn = false;   // set from /api/health before cells render; shows Format on text cells
 const TYPE_LABEL = { text: "Text", image: "Image", ai: "AI" };
@@ -315,9 +337,12 @@ async function renderRecipe(id, tab = "notes") {
       <section id="pane-recipe" ${tab === "recipe" ? "" : "hidden"}>
         <div class="nb-toolbar" role="toolbar" aria-label="Recipe">
           ${h.draft ? `<button class="btn btn-sm btn-primary" id="compile">✦ ${r.compiled ? "Regenerate" : "Generate"} from notes</button>` : `<button class="btn btn-sm" disabled title="Set ANTHROPIC_API_KEY to enable">✦ Generate from notes</button>`}
+          <button class="btn btn-sm" id="edit-toggle">${r.compiled ? "Edit" : "Done editing"}</button>
           <span class="hint" id="compile-hint">${r.compiled ? "Reads every text and AI cell and rewrites this. Your edits here are replaced." : "Reads every text and AI cell and writes one clean recipe here."}</span>
         </div>
-        <textarea class="compiled" id="compiled" rows="1" placeholder="Nothing here yet. Generate from your notes, or write the recipe directly." aria-label="Recipe">${esc(r.compiled)}</textarea>
+        <article class="rendered" id="rendered" ${r.compiled ? "" : "hidden"}><h1 class="rendered-title">${esc(r.title)}</h1>${md(r.compiled)}</article>
+        <textarea class="compiled" id="compiled" rows="1" ${r.compiled ? "hidden" : ""} placeholder="Nothing here yet. Generate from your notes, or write the recipe directly (markdown: ## headings, - ingredients, 1. steps)." aria-label="Recipe">${esc(r.compiled)}</textarea>
+        <p class="hint" id="edit-hint" ${r.compiled ? "" : "hidden"}>Press Edit to change the text; highlight any part while editing to fix just that part.</p>
         <div class="fixbar" id="fixbar" hidden>
           <span class="fixbar-sel" id="fixsel"></span>
           <input id="fixwhat" placeholder="What should change? (optional)" aria-label="What should change">
@@ -518,7 +543,14 @@ async function renderRecipe(id, tab = "notes") {
   });
 
   // --- Recipe tab: the compiled recipe, generate/regenerate, highlight-and-fix ---
-  const compiledEl = view.querySelector("#compiled");
+  const compiledEl = view.querySelector("#compiled"), renderedEl = view.querySelector("#rendered"), editToggle = view.querySelector("#edit-toggle");
+  const rerender = () => { renderedEl.innerHTML = `<h1 class="rendered-title">${esc(view.querySelector("#title").value || "Untitled")}</h1>${md(compiledEl.value)}`; };
+  const setEditing = (on) => {
+    renderedEl.hidden = on; compiledEl.hidden = !on; editToggle.textContent = on ? "Done editing" : "Edit";
+    if (on) { grow(compiledEl); compiledEl.focus(); } else { rerender(); fixbar.hidden = true; sel = null; }
+  };
+  editToggle.addEventListener("click", () => { const on = compiledEl.hidden; if (!on) save(); setEditing(on); });
+  view.querySelector("#title").addEventListener("input", () => { if (!renderedEl.hidden) rerender(); });
   grow(compiledEl);
   compiledEl.addEventListener("input", () => { grow(compiledEl); saveSoon(); });
   compiledEl.addEventListener("blur", () => { setTimeout(() => { if (!fixbar.contains(document.activeElement)) save(); }, 0); });
@@ -531,6 +563,7 @@ async function renderRecipe(id, tab = "notes") {
       r = await api.req("POST", `/recipes/${id}/compile`);
       compiledEl.value = r.compiled; grow(compiledEl);
       view.querySelector("#title").value = r.title; view.querySelector("#tags").value = r.tags.join(", ");
+      setEditing(false);
       compileBtn.textContent = "✦ Regenerate from notes";
       view.querySelector("#compile-hint").textContent = "Reads every text and AI cell and rewrites this. Your edits here are replaced.";
       view.querySelector('.tab[href$="/recipe"]').textContent = "Recipe";

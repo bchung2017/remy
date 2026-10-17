@@ -29,26 +29,46 @@ COMPILE_SYSTEM = (
     "Produce the single clean recipe they describe. Later notes win over earlier ones "
     "when they conflict. Keep the cook's quantities, ingredients, steps and wording; "
     "remove repetition and filler. Do not invent ingredients, amounts or steps that "
-    "were not in the notes. Write the body as plain text, not markdown: an 'Ingredients' "
-    "line, one ingredient per line, a blank line, then 'Steps' with numbered lines, and "
-    "optionally a blank line and a short 'Notes' section for tips the cook gave. If a "
-    "title hint is given, keep it unless it is empty or clearly wrong. Tags: 1 to 4 short "
-    "lowercase words for the dish type or main ingredient."
+    "were not in the notes.\n\n"
+    "Ingredients are listed exactly as bought from the store, never pre-prepped: write "
+    "'1 onion', not '1 onion, diced'; '2 cloves garlic', not 'minced garlic'; '1 can "
+    "chickpeas', not 'drained chickpeas'. Every preparation action (peeling, dicing, "
+    "mincing, draining, soaking, toasting, bringing to room temperature) is its own "
+    "numbered step, in the order the cook does it. The recipe records every action "
+    "involved in cooking the food.\n\n"
+    "Write the body in this exact markdown layout and nothing else:\n"
+    "## 🧂 Ingredients\n"
+    "- one ingredient per line with quantity first\n"
+    "\n"
+    "## 🔪 Steps\n"
+    "1. one action per numbered step, short imperative sentences\n"
+    "\n"
+    "## 📝 Notes\n"
+    "- optional: tips, substitutions, timing the cook mentioned; omit the section if none\n"
+    "\n"
+    "Before the first section you may add one line like '⏱ 20 min prep · 90 min bake · "
+    "serves 4' only if the notes say so. Use **bold** for the key ingredient or temperature "
+    "in a step when it helps scanning. Do not include the recipe title in the body; it is "
+    "shown above it. No other headings, tables, or HTML.\n\n"
+    "If a title hint is given, keep it unless it is empty or clearly wrong. Tags: 1 to 4 "
+    "short lowercase words for the dish type or main ingredient."
 )
 
 REVISE_SYSTEM = (
     "You edit one highlighted span inside a plain-text recipe. You get the full recipe "
     "for context, the exact highlighted span, and the cook's instruction (which may be "
     "empty: then just tidy the span, fixing dictation errors, wording and formatting). "
-    "Return ONLY the replacement for the highlighted span, in the same plain-text style "
-    "as its surroundings, nothing else. Do not rewrite text outside the span. Do not "
-    "invent ingredients or steps the cook did not ask for."
+    "Return ONLY the replacement for the highlighted span, matching the formatting of its "
+    "surroundings (the recipe is markdown: '## 🧂 Ingredients' style headings, '- ' "
+    "ingredient lines, '1. ' numbered steps), nothing else. Do not rewrite text outside "
+    "the span. Ingredients stay as bought from the store; prep actions belong in steps. "
+    "Do not invent ingredients or steps the cook did not ask for."
 )
 
 
 class Draft(BaseModel):
     title: str = Field(description="Short recipe name.")
-    body: str = Field(description="Plain-text ingredients and numbered steps.")
+    body: str = Field(description="The recipe body: plain text for a single cell, markdown for the compiled recipe.")
     tags: list[str] = Field(description="1-4 short lowercase tags.")
 
 
