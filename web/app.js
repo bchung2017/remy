@@ -79,9 +79,10 @@ function startDictation({ onText, onDone, groq }) {
     engineEl.textContent = "Using this browser's speech recognition.";
     rec = new SR(); rec.continuous = true; rec.interimResults = true; rec.lang = navigator.language || "en-US";
     // Some phones (no Google speech engine) start the recognizer and then never report anything,
-    // not even an error: if nothing is heard within a few seconds, hand off to the cloud.
+    // not even an error; the "voice engine can't be found" toast is Android's and invisible to a web page.
+    // A working engine fires audiostart within a few hundred ms of start(): if it hasn't in 2.5s, hand off.
     rec.onaudiostart = () => { heard = true; };
-    watchdog = setTimeout(() => { if (!closed && mode === "browser" && !heard && !gotAny) switchToGroq("This browser's recognizer never started."); }, 5000);
+    watchdog = setTimeout(() => { if (!closed && mode === "browser" && !heard && !gotAny) switchToGroq("This browser's recognizer never started."); }, 2500);
     rec.onresult = (e) => {
       if (closed) return;
       heard = true;

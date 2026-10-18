@@ -11,9 +11,9 @@ clipped up as tickets, and the counter below it with the range, a pot and
 skillet, and the cookbook standing beside them. On desktop the whole scene
 is zoomed to fill the window. Clicking the book lifts it to the camera,
 opens it, flips a couple of pages (each showing a random recipe) and lands
-on the cookbook (`#/book`): a sheet of notepad paper, light in both
-themes, with search and sort handwritten on top and a numbered table of
-contents below, each page's first photo taped beside its title. Star a page (from its
+on the cookbook (`#/book`): search, tag filter and sort on top and the
+table of contents below, with the first photo of each page. The tickets
+on the pass are paper slips with the order handwritten on them. Star a page (from its
 header or the cookbook) to hang it on the pass; a fourth star demotes the
 oldest one instead of refusing.
 
