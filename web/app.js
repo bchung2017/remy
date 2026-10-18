@@ -22,6 +22,7 @@ const api = {
   remove: (id) => api.req("DELETE", "/recipes/" + id),
   upload: (id, file) => { const fd = new FormData(); fd.append("file", file, file.name || "image.jpg"); return api.req("POST", `/recipes/${id}/assets`, fd, true); },
   draft: (b) => api.req("POST", "/recipes/draft", b),
+  video: (url) => api.req("POST", "/video/transcript", { url }),
 };
 const health = api.req("GET", "/health").catch(() => ({}));
 // ---------- speech-to-text: chunks uploaded to /api/transcribe (Groq Whisper) ----------
@@ -220,7 +221,7 @@ function md(src) {
 }
 
 // ---------- notebook page (Jupyter-style cells) ----------
-const TYPE_LABEL = { text: "Text", image: "Image", ai: "Voice" };   // "ai" stays the stored type for old pages
+const TYPE_LABEL = { text: "Text", image: "Image", ai: "Voice", video: "Video" };   // "ai" stays the stored type for old pages
 
 function cellHtml(b, n) {
   const gutter = `<div class="gutter"><span class="kind">${TYPE_LABEL[b.type] || "Voice"}</span><span class="num">[${n}]</span></div>`;
@@ -244,14 +245,25 @@ function cellHtml(b, n) {
       </div>
       <textarea class="transcript" rows="1" placeholder="Say the recipe the way you'd tell a friend. Edit here, then add it as a note." aria-label="Transcript"></textarea>
     </div>`;
+  else if (b.type === "video" && b.draft) body = `
+    <div class="cell-in ai-in">
+      <div class="ai-row">
+        <input class="video-url" type="url" inputmode="url" placeholder="Paste a YouTube link" aria-label="YouTube link">
+        <button class="btn btn-sm btn-primary fetch-video" disabled>Get transcript</button>
+      </div>
+      <span class="hint video-note"></span>
+    </div>`;
+  else if (b.type === "video") body = `
+    <div class="cell-in"><a class="video-link" href="${esc(b.url)}" target="_blank" rel="noopener">${esc(b.url)}</a><textarea class="text" rows="1" aria-label="Video transcript">${esc(b.text)}</textarea></div>
+    <div class="cell-foot"><button class="btn btn-sm btn-primary done-edit" type="button">✓ Done</button></div>`;
   else if (b.type === "ai") body = `
     <div class="cell-in"><textarea class="text" rows="1" aria-label="Voice note">${esc(b.text)}</textarea></div>
     <div class="cell-foot"><button class="btn btn-sm btn-primary done-edit" type="button">✓ Done</button></div>`;
   else body = `
     <div class="cell-in"><textarea class="text" rows="1" placeholder="Write here, or paste a recipe dump" aria-label="Text">${esc(b.text)}</textarea></div>
     <div class="cell-foot"><button class="btn btn-sm btn-primary done-edit" type="button">✓ Done</button></div>`;
-  const pick = b.draft || b.type === "image" ? "" : `<label class="pick" hidden><input type="checkbox" class="pick-box" aria-label="Select cell to merge"></label>`;
-  return `<section class="cell cell-${b.type} ${b.draft ? "draft" : ""}" data-id="${esc(b.id)}" data-type="${b.type}" tabindex="-1">${pick}${gutter}<div class="cell-body">${body}</div>${tools}</section>`;
+  const pick = b.draft || b.type === "image" || b.type === "video" ? "" : `<label class="pick" hidden><input type="checkbox" class="pick-box" aria-label="Select cell to merge"></label>`;
+  return `<section class="cell cell-${b.type} ${b.draft ? "draft" : ""}" data-id="${esc(b.id)}" data-type="${b.type}"${b.url ? ` data-url="${esc(b.url)}"` : ""} tabindex="-1">${pick}${gutter}<div class="cell-body">${body}</div>${tools}</section>`;
 }
 
 const grow = (ta) => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; };
@@ -299,7 +311,7 @@ async function renderRecipe(id, tab = "recipe") {
           </span>
         </div>
         <article class="rendered" id="rendered" ${r.compiled ? "" : "hidden"}><h1 class="rendered-title">${esc(r.title)}</h1>${md(r.compiled)}</article>
-        <p class="hint empty-recipe" ${r.compiled || r.blocks.some((b) => b.type !== "image") ? "hidden" : ""}>No notes yet. <a href="#/r/${id}/notes">Add notes</a> (type, dictate, or photograph), then generate the recipe here.</p>
+        <p class="hint empty-recipe" ${r.compiled || r.blocks.some((b) => b.type !== "image") ? "hidden" : ""}>No notes yet. <a href="#/r/${id}/notes">Add notes</a> (type, dictate, photograph, or paste a video), then generate the recipe here.</p>
         <textarea class="compiled" id="compiled" rows="1" ${r.compiled ? "hidden" : ""} placeholder="Nothing here yet. Generate from your notes, or write the recipe directly (markdown: ## headings, - ingredients, 1. steps)." aria-label="Recipe">${esc(r.compiled)}</textarea>
         <p class="hint" id="edit-hint" ${r.compiled ? "" : "hidden"}>Press Edit to change the text; highlight any part while editing to fix just that part.</p>
         <div class="fixbar" id="fixbar" hidden>
@@ -315,6 +327,7 @@ async function renderRecipe(id, tab = "recipe") {
         <label class="btn btn-sm" for="add-image">+ Image</label>
         <input id="add-image" type="file" accept="image/*" hidden>
         <button class="btn btn-sm" data-add="ai">+ Voice</button>
+        <button class="btn btn-sm" data-add="video">+ Video</button>
         <span class="sep"></span>
         <button class="btn btn-sm btn-ghost" id="t-up" title="Move cell up">↑</button>
         <button class="btn btn-sm btn-ghost" id="t-down" title="Move cell down">↓</button>
@@ -357,6 +370,7 @@ async function renderRecipe(id, tab = "recipe") {
     const id = el.dataset.id, type = el.dataset.type;
     if (type === "image") return { id, type, asset: el.querySelector("img").getAttribute("src").split("/").pop(), caption: el.querySelector(".caption").value };
     if (type === "ai") return { id, type, text: el.querySelector(".text").value, transcript: transcripts[id] || "" };
+    if (type === "video") return { id, type, url: el.dataset.url, text: el.querySelector(".text").value };
     return { id, type, text: el.querySelector(".text").value };
   });
   const renumber = () => {
@@ -476,6 +490,23 @@ async function renderRecipe(id, tab = "recipe") {
         await save();
       });
     }
+    const fetchBtn = el.querySelector(".fetch-video");
+    if (fetchBtn) {
+      const input = el.querySelector(".video-url"), note = el.querySelector(".video-note");
+      const go = async () => {
+        const url = input.value.trim(); if (!url || fetchBtn.disabled) return;
+        fetchBtn.disabled = input.disabled = true; note.textContent = "Reading the video's captions…"; err("");
+        try {
+          const v = await api.video(url);
+          el.insertAdjacentHTML("afterend", cellHtml({ id: uid(), type: "video", url: v.url, text: v.text }, 0));
+          const real = el.nextElementSibling; wire(real); el.remove(); renumber(); select(real);
+          await save();
+        } catch (e) { note.textContent = e.message; fetchBtn.disabled = input.disabled = false; input.focus(); }
+      };
+      input.addEventListener("input", () => { fetchBtn.disabled = !input.value.trim(); note.textContent = ""; });
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(); } });
+      fetchBtn.addEventListener("click", go);
+    }
   };
   cellsEl.querySelectorAll(".cell").forEach(wire);
   ["#title", "#tags"].forEach((sel) => { const i = view.querySelector(sel); i.addEventListener("input", saveSoon); i.addEventListener("blur", save); });
@@ -487,11 +518,12 @@ async function renderRecipe(id, tab = "recipe") {
     else cellsEl.insertAdjacentHTML("beforeend", html);
     const el = selected?.parentElement === cellsEl ? selected.nextElementSibling : cellsEl.lastElementChild;
     wire(el); renumber(); select(el);
-    (el.querySelector("textarea.text, textarea.transcript") || el).focus({ preventScroll: true }); el.scrollIntoView({ block: "nearest" });
+    (el.querySelector("textarea.text, textarea.transcript, input.video-url") || el).focus({ preventScroll: true }); el.scrollIntoView({ block: "nearest" });
     return el;
   };
   view.querySelectorAll("[data-add]").forEach((b) => b.addEventListener("click", () => {
     if (b.dataset.add === "text") { insert({ id: uid(), type: "text", text: "" }); save(); }
+    else if (b.dataset.add === "video") insert({ id: "draft-" + uid(), type: "video", draft: true });
     else insert({ id: "draft-" + uid(), type: "ai", draft: true, voice: !!h.voice });
   }));
   view.querySelector("#add-image").addEventListener("change", async (e) => {
@@ -533,7 +565,7 @@ async function renderRecipe(id, tab = "recipe") {
     const show = !rec.compiled || !!rec.notesChanged;
     genWrap.hidden = !show;
     if (compileBtn && !compileBtn.disabled) compileBtn.textContent = rec.compiled ? "✦ Regenerate from notes" : "✦ Generate from notes";
-    view.querySelector("#compile-hint").textContent = rec.compiled ? "Your notes changed. Regenerating reads every text and voice cell and rewrites this recipe; edits made here are replaced." : "Reads every text and voice cell and writes one clean recipe here.";
+    view.querySelector("#compile-hint").textContent = rec.compiled ? "Your notes changed. Regenerating reads every text, voice and video cell and rewrites this recipe; edits made here are replaced." : "Reads every text, voice and video cell and writes one clean recipe here.";
   };
   const rerender = () => { renderedEl.innerHTML = `<h1 class="rendered-title">${esc(view.querySelector("#title").value || "Untitled")}</h1>${md(compiledEl.value)}`; };
   const setEditing = (on) => {

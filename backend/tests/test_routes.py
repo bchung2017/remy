@@ -112,7 +112,7 @@ class Recipes(unittest.TestCase):
 
     def test_bad_blocks_are_400(self):
         rid = self.client.post("/api/recipes", json={"title": "x"}).get_json()["id"]
-        for bad in ["nope", [{"type": "video"}], [{"type": "image"}], [{"type": "text", "text": 5}]]:
+        for bad in ["nope", [{"type": "audio"}], [{"type": "image"}], [{"type": "text", "text": 5}]]:
             self.assertEqual(self.client.put(f"/api/recipes/{rid}", json={"blocks": bad}).status_code, 400, bad)
 
     def test_search_tag_and_sort(self):

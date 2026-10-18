@@ -144,7 +144,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--copper); ou
 .cell:focus-visible { outline: 2px solid var(--copper); outline-offset: 0; }
 .gutter { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding-top: 6px; padding-right: var(--space-1); color: var(--ink-muted); font: 400 12px/14px var(--font-ticket); text-align: right; user-select: none; }
 .gutter .kind { font: 700 11px/14px var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--slate); }
-.cell-ai .gutter .kind { color: var(--copper); }
+.cell-ai .gutter .kind, .cell-video .gutter .kind { color: var(--copper); }
 .cell-body { min-width: 0; display: grid; gap: var(--space-1); }
 .cell-foot { display: none; justify-content: flex-end; }
 .cell.editing .cell-foot { display: flex; }
@@ -183,6 +183,8 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--copper); ou
 .caption:focus { outline: none; box-shadow: 0 1px 0 var(--copper); }
 .ai-in { display: grid; gap: var(--space-2); }
 .ai-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.video-url { flex: 1 1 220px; min-width: 0; }
+.video-link { display: block; margin-bottom: var(--space-1); color: var(--ink-muted); font: 500 14px/20px var(--font-body); overflow-wrap: anywhere; }
 .ai-row .interim { flex: 1 1 120px; min-width: 0; font-style: italic; }
 /* recording panel: full screen, state readable from across the kitchen */
 body.rec-open { overflow: hidden; }

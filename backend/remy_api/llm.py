@@ -123,7 +123,7 @@ def draft_recipe(transcript: str, title_hint: str = "") -> Draft:
     return _check(_parse(transcript[:MAX_TRANSCRIPT_CHARS], title_hint.strip()[:200]))
 
 
-MAX_NOTES_CHARS = 24000
+MAX_NOTES_CHARS = 60000   # room for a video transcript plus the cook's own notes
 
 
 def compile_recipe(notes: list[str], title_hint: str = "") -> Draft:

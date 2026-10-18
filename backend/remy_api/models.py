@@ -6,7 +6,8 @@ Block shapes (all carry a client-or-server-assigned `id`):
   {"id", "type": "text",  "text": str}
   {"id", "type": "image", "asset": str, "caption": str}
   {"id", "type": "ai",    "text": str, "transcript": str}   (output, and the dictated input)
-`body` is derived from the text of text/ai blocks so search and list previews
+  {"id", "type": "video", "text": str, "url": str}          (a YouTube video's captions)
+`body` is derived from the text of text/ai/video blocks so search and list previews
 stay cheap; it is never written directly once blocks exist.
 """
 import hashlib
@@ -16,10 +17,12 @@ from datetime import datetime, timezone
 
 from . import db
 
-BLOCK_TYPES = {"text", "image", "ai"}
+BLOCK_TYPES = {"text", "image", "ai", "video"}
+NOTE_TYPES = ("text", "ai", "video")   # the cells Generate reads
 MAX_STARS = 3
 MAX_BLOCKS = 200
 MAX_BLOCK_TEXT = 20000
+MAX_VIDEO_TEXT = 40000   # matches youtube.MAX_TEXT
 
 
 def _utcnow() -> datetime:
@@ -39,18 +42,21 @@ def normalize_blocks(raw) -> list[dict]:
     out = []
     for b in raw:
         if not isinstance(b, dict) or b.get("type") not in BLOCK_TYPES:
-            raise ValueError("each block needs a type of text, image or ai")
+            raise ValueError("each block needs a type of text, image, ai or video")
         bid = b.get("id")
         bid = bid if isinstance(bid, str) and 0 < len(bid) <= 40 else new_id()
         blk = {"id": bid, "type": b["type"]}
-        if b["type"] in ("text", "ai"):
+        if b["type"] in NOTE_TYPES:
             text = b.get("text", "")
             if not isinstance(text, str):
                 raise ValueError("text must be a string")
-            blk["text"] = text[:MAX_BLOCK_TEXT]
+            blk["text"] = text[:MAX_VIDEO_TEXT if b["type"] == "video" else MAX_BLOCK_TEXT]
         if b["type"] == "ai":
             tr = b.get("transcript", "")
             blk["transcript"] = tr[:MAX_BLOCK_TEXT] if isinstance(tr, str) else ""
+        if b["type"] == "video":
+            url = b.get("url", "")
+            blk["url"] = url[:300] if isinstance(url, str) else ""
         if b["type"] == "image":
             asset = b.get("asset")
             if not (isinstance(asset, str) and asset and len(asset) <= 40):
@@ -63,7 +69,7 @@ def normalize_blocks(raw) -> list[dict]:
 
 
 def blocks_text(blocks: list[dict]) -> str:
-    return "\n\n".join(b["text"].strip() for b in blocks if b["type"] in ("text", "ai") and b.get("text", "").strip())
+    return "\n\n".join(b["text"].strip() for b in blocks if b["type"] in NOTE_TYPES and b.get("text", "").strip())
 
 
 class Recipe(db.Model):
@@ -72,7 +78,7 @@ class Recipe(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
     blocks = db.Column(db.Text, nullable=False, default="[]")      # JSON list, see module doc
-    body = db.Column(db.Text, nullable=False, default="")          # derived: text of all text/ai blocks
+    body = db.Column(db.Text, nullable=False, default="")          # derived: text of all text/ai/video blocks
     compiled = db.Column(db.Text, nullable=False, default="")      # the one clean recipe built from the cells (Recipe tab)
     compiled_hash = db.Column(db.String(64), nullable=False, default="")   # hash of the notes the recipe was generated from
     starred_at = db.Column(db.DateTime, nullable=True)                     # set = on the pass; at most MAX_STARS pages, oldest demoted
@@ -113,7 +119,7 @@ class Recipe(db.Model):
         self.body = blocks_text(blocks)
 
     def notes_hash(self) -> str:
-        """Fingerprint of what Generate reads: the text of text/voice cells, in order."""
+        """Fingerprint of what Generate reads: the text of text/voice/video cells, in order."""
         return hashlib.sha256(self.body.encode("utf-8")).hexdigest()
 
     def notes_changed(self) -> bool:

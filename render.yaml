@@ -21,6 +21,10 @@ services:
       # Secret; set in the dashboard. Unset ⇒ Dictate is disabled, typing works.
       - key: GROQ_API_KEY
         sync: false
+      # Optional: http(s) proxy for the video cell's YouTube caption fetch, for
+      # when YouTube blocks Render's IP. Secret; set in the dashboard.
+      - key: YOUTUBE_PROXY_URL
+        sync: false
       # remy's isolated Postgres schema (a namespace inside the one database).
       - key: DB_SCHEMA
         value: remy

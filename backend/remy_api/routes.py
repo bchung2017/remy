@@ -5,8 +5,8 @@ import anthropic
 from flask import Blueprint, Response, current_app, jsonify, request
 from sqlalchemy import or_
 
-from . import db, llm, stt
-from .models import MAX_STARS, Asset, Recipe, new_id, normalize_blocks
+from . import db, llm, stt, youtube
+from .models import MAX_STARS, NOTE_TYPES, Asset, Recipe, new_id, normalize_blocks
 
 api = Blueprint("api", __name__, url_prefix="/api")
 
@@ -247,6 +247,22 @@ def transcribe_chunk():
     return jsonify({"text": text})
 
 
+@api.post("/video/transcript")
+def video_transcript():
+    """{url} -> {url, text}: the YouTube video's captions, for a video cell.
+    Nothing is saved; the client writes the result into a `video` block."""
+    data = request.get_json(silent=True) or {}
+    url = data.get("url")
+    vid = youtube.video_id(url) if isinstance(url, str) else None
+    if not vid:
+        return jsonify({"error": "paste a YouTube video link"}), 400
+    try:
+        text = youtube.transcript(vid)
+    except youtube.VideoError as e:
+        return jsonify({"error": str(e)}), e.status
+    return jsonify({"url": f"https://www.youtube.com/watch?v={vid}", "text": text})
+
+
 # --- Recipe tab: all cells -> one clean recipe; highlight -> revise ------------
 
 def _llm_errors(fn):
@@ -265,14 +281,14 @@ def _llm_errors(fn):
 
 @api.post("/recipes/<int:recipe_id>/compile")
 def compile_recipe(recipe_id: int):
-    """Read every text/AI cell in order and write one clean recipe into `compiled`.
+    """Read every text/voice/video cell in order and write one clean recipe into `compiled`.
     An untitled page takes the drafted title; empty tags take the drafted tags."""
     if not llm.enabled():
         return jsonify({"error": "drafting is off: ANTHROPIC_API_KEY is not set"}), 503
     recipe = db.session.get(Recipe, recipe_id)
     if recipe is None:
         return jsonify({"error": "not found"}), 404
-    notes = [b["text"] for b in recipe.block_list() if b["type"] in ("text", "ai") and b.get("text", "").strip()]
+    notes = [b["text"] for b in recipe.block_list() if b["type"] in NOTE_TYPES and b.get("text", "").strip()]
     if not notes:
         return jsonify({"error": "no text to compile yet"}), 400
     title_hint = "" if recipe.title == UNTITLED else recipe.title
