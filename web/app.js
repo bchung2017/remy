@@ -48,7 +48,7 @@ function resample16k(pcm, from) {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const sttPref = () => { try { return localStorage.getItem("remy.stt") || ""; } catch { return ""; } };
 const sttRemember = (mode) => { try { localStorage.setItem("remy.stt", mode); } catch {} };
-const SR_FATAL = new Set(["network", "service-not-allowed", "language-not-supported", "bad-grammar"]);
+const SR_FATAL = new Set(["network", "service-not-allowed", "language-not-supported", "bad-grammar", "audio-capture"]);
 
 // Full-screen recording panel: pulsing dot, mic level, timer, the words as they land, one
 // big Done. onText(text) per committed phrase or chunk; onDone(ok).
@@ -74,12 +74,17 @@ function startDictation({ onText, onDone, groq }) {
   const addFinal = (t) => { t = t.trim(); if (!t) return; finalEl.textContent = (finalEl.textContent + " " + t).trim(); onText(t); panel.scrollTop = panel.scrollHeight; };
 
   // ---- browser recognizer ----
-  let rec = null, gotAny = false, ends = 0;
+  let rec = null, gotAny = false, ends = 0, heard = false, watchdog = null;
   const startBrowser = () => {
     engineEl.textContent = "Using this browser's speech recognition.";
     rec = new SR(); rec.continuous = true; rec.interimResults = true; rec.lang = navigator.language || "en-US";
+    // Some phones (no Google speech engine) start the recognizer and then never report anything,
+    // not even an error: if nothing is heard within a few seconds, hand off to the cloud.
+    rec.onaudiostart = () => { heard = true; };
+    watchdog = setTimeout(() => { if (!closed && mode === "browser" && !heard && !gotAny) switchToGroq("This browser's recognizer never started."); }, 5000);
     rec.onresult = (e) => {
       if (closed) return;
+      heard = true;
       let live = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript;
@@ -102,7 +107,7 @@ function startDictation({ onText, onDone, groq }) {
     try { rec.start(); } catch (e) { switchToGroq("This browser's recognizer could not start."); }
   };
   const switchToGroq = (why) => {
-    try { rec?.abort(); } catch {} rec = null;
+    clearTimeout(watchdog); try { rec?.abort(); } catch {} rec = null;
     if (!groq) { fail(why + " Set GROQ_API_KEY to fall back to cloud transcription, or type the recipe instead."); return; }
     mode = "groq"; sttRemember("groq"); interimEl.textContent = "";
     engineEl.textContent = why + " Switched to cloud transcription for this and future recordings.";
@@ -180,7 +185,7 @@ function startDictation({ onText, onDone, groq }) {
 
   // ---- finish / cancel ----
   const stopCapture = () => { try { proc?.disconnect(); src?.disconnect(); } catch {} stream?.getTracks().forEach((t) => t.stop()); ac?.close().catch(() => {}); };
-  const teardown = () => { closed = true; clearInterval(tick); try { rec?.stop(); } catch {} panel.remove(); document.body.classList.remove("rec-open"); onDone(ok); };
+  const teardown = () => { closed = true; clearInterval(tick); clearTimeout(watchdog); try { rec?.stop(); } catch {} panel.remove(); document.body.classList.remove("rec-open"); onDone(ok); };
   const maybeFinish = () => { if (pending.size === 0) teardown(); else status(); };
   done.addEventListener("click", () => {
     if (finishing) return;
