@@ -52,13 +52,20 @@
 .ticket:hover { transform: rotate(0deg) translateY(2px); }
 .ticket a { display: block; color: inherit; text-decoration: none; }
 .clip { position: absolute; left: 50%; top: -4px; width: 18px; height: 22px; margin-left: -9px; border-radius: 3px 3px 6px 6px; background: linear-gradient(var(--slate), var(--ink-muted)); box-shadow: inset 0 2px 0 rgba(255,255,255,.35); z-index: 1; }
-/* the slips are paper in both themes: a printed ticket header, the order written on by hand */
-.slip { display: grid; gap: 2px; margin-top: 10px; padding: var(--space-3) var(--space-3) var(--space-4); background: var(--paper); border-bottom: 2px dashed #d9cdb8; color: var(--paper-ink); box-shadow: 0 6px 14px rgba(42,33,48,.22); min-height: 112px; }
-.slip-head { display: flex; justify-content: space-between; font: 700 11px/16px var(--font-ticket); letter-spacing: .08em; color: var(--paper-ink-muted); }
+/* the slips are torn off a notepad: paper in both themes, ruled lines, a red margin, a printed
+   ticket header above the first rule, the order handwritten on the rules, and a curled corner */
+.slip { --rule: 28px; position: relative; display: grid; gap: 0; margin-top: 10px; padding: 8px 14px 18px 26px; min-height: 124px; color: var(--paper-ink);
+  background: var(--paper) repeating-linear-gradient(transparent 0 calc(var(--rule) - 1px), var(--paper-rule) calc(var(--rule) - 1px) var(--rule)) local;
+  background-position: 0 25px; background-size: 100% 100%, 100% var(--rule); background-repeat: no-repeat, repeat-y;
+  border-top: 2px dotted #cbbfa6; box-shadow: 0 1px 0 #e4d9c3, 0 8px 16px rgba(42,33,48,.24); }
+.slip::before { content: ""; position: absolute; top: 0; bottom: 0; left: 18px; width: 1.5px; background: var(--paper-margin); opacity: .8; }
+/* the bottom-right corner lifts: the slip's own backdrop shows through the cut, the curl is lighter paper with a shadow */
+.slip::after { content: ""; position: absolute; right: 0; bottom: 0; width: 30px; height: 30px;
+  background: linear-gradient(225deg, var(--surface) 0 50%, #e6dbc3 50% 54%, #fffdf6 62% 78%, #d6cab1 100%); box-shadow: -3px -3px 6px rgba(42,33,48,.16); border-radius: 0 0 0 3px; }
+.slip-head { display: flex; justify-content: space-between; height: 22px; font: 700 11px/22px var(--font-ticket); letter-spacing: .08em; color: var(--paper-ink-muted); }
 .slip-star { color: #c98a1e; font-size: 13px; }
-.slip-title { font: 400 24px/28px var(--font-hand); color: var(--pen); overflow-wrap: break-word; hyphens: auto; }
-.slip-meta { font: 400 17px/22px var(--font-hand); color: var(--paper-ink-muted); }
-.ticket.empty .slip { background: #f3ecdd; }
+.slip-title { font: 400 24px/var(--rule) var(--font-hand); color: var(--pen); overflow-wrap: break-word; hyphens: auto; }
+.slip-meta { font: 400 17px/var(--rule) var(--font-hand); color: var(--paper-ink-muted); }
 .ticket.empty .slip-title { color: #d9cdb8; }
 .ticket.empty .slip-meta { font-size: 16px; }
 
@@ -109,10 +116,11 @@
   .counter { margin-top: var(--space-4); }
   .cover-title { font-size: 9px; } .cover-rule { width: 18px; margin-top: 4px; }
   .tickets { gap: var(--space-2); padding: 0 var(--space-2); }
-  .slip { padding: var(--space-2); min-height: 96px; }
-  .slip-title { font-size: 18px; line-height: 21px; }
-  .slip-meta { font-size: 14px; line-height: 18px; }
-  .slip-head { font-size: 10px; }
+  .slip { --rule: 22px; padding: 6px 8px 14px 16px; min-height: 100px; background-position: 0 17px; }
+  .slip::before { left: 10px; } .slip::after { width: 22px; height: 22px; }
+  .slip-head { height: 18px; font-size: 10px; line-height: 18px; }
+  .slip-title { font-size: 18px; }
+  .slip-meta { font-size: 14px; }
   .bpage { padding: var(--space-4); }
   .book-fly.to-camera { left: calc(50vw - 100px) !important; top: calc(50vh - 130px) !important; width: 200px !important; height: 260px !important; }
   .book-fly .cover-title { font-size: 26px; }
